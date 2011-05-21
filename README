@@ -1,0 +1,5 @@
+There are a few things which can be configured.  Edit src/Main.hs and mess with
+the Config it passes in.  There isn't much configurability but what there is
+should be documented in the modules in which it is defined.
+
+See the vimrc for an exmaple of how it can be bound to a key in vim.
