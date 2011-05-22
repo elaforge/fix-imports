@@ -4,6 +4,7 @@ nm <silent> ,a :call FixImports()<cr>
 
 " Run the contents of the current buffer through the FixImports cmd.  Print
 " any stderr output on the status line.
+" Remove 'a' from cpoptions if you don't want this to mess up #.
 function FixImports()
     let out = tempname()
     let err = tempname()

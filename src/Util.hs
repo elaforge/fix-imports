@@ -1,6 +1,7 @@
 module Util where
 import qualified Data.Function as Function
 import qualified Data.List as List
+import qualified Data.List.Split as Split
 import qualified System.Directory as Directory
 import System.FilePath ( (</>) )
 
@@ -13,19 +14,7 @@ join sep = concat . List.intersperse sep
 
 -- | Split 'xs' on 'sep', dropping 'sep' from the result.
 split :: (Eq a) => [a] -> [a] -> [[a]]
-split [] _ = error $ "Util.Seq.split: empty separator"
-split sep xs = go sep xs
-    where
-    go sep xs
-        | null post = [pre]
-        | otherwise = pre : split sep (drop (length sep) post)
-        where (pre, post) = break_tails (sep `List.isPrefixOf`) xs
-
-break_tails :: ([a] -> Bool) -> [a] -> ([a], [a])
-break_tails _ [] = ([], [])
-break_tails f lst@(x:xs)
-    | f lst = ([], lst)
-    | otherwise = let (pre, post) = break_tails f xs in (x:pre, post)
+split = Split.splitOn
 
 -- * control
 
