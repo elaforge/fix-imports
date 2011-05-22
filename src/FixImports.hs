@@ -1,29 +1,41 @@
 {- | Automatically fix the import list in a haskell module.
 
-    - parse entire file, extract qualified names A.b
-    - adjust imports:
-        - used imports stay
-        - unqualified imports stay
-        - unused imports are removed
-        - qualified names that were not imported get new imports
-            - first search in local directories, then search package db
+    This only really works for qualified names.  The process is as follows:
 
-    If there are no imports to be added or removed, the file is returned
+    - Parse the entire file and extract the Qualification of qualified names
+    like @A.b@, which is simple @A@.
+
+    - Combine this with the modules imported to decide which imports can be
+    removed and which ones must be added.
+
+    - For added imports, guess the complete import path implied by the
+    Qualification.  This requires some heuristics:
+
+        - Check local modules first.  Start in the current module's directory
+        and then try from the current directory, descending recursively.
+
+        - If no local modules are found, check the package database.  There is
+        a system of package priorities so that @List@ will yield @Data.List@
+        from @base@ rather than @List@ from @haskell98@.  After that, shorter
+        matches are prioritized so @System.Process@ is chosen over
+        @System.Posix.Process@.
+
+        - If the module is not found at all, an error is printed on stderr and
+        the unchanged file on stdout.
+
+        - Of course the heuristics may get the wrong module, but existing
+        imports are left alone so you can edit them by hand.
+
+    - Then imports are sorted, grouped, and a new module is written to stdout
+    with the new import block replacing the old one.
+
+        - The default import formatting separates package imports from local
+        imports, and groups them by their toplevel module name (before the
+        first dot).  Small groups are combined.  They go in alphabetical order
+        by default, but a per-project order may be defined.
+
+    - If there are no imports to be added or removed, the file is returned
     unchanged.  This means it won't sort the imports in this case.
-
-    TODO
-    * complain about imports that couldn't be found
-    * logging to report (added, removed)
-    * local imports go below library ones
-    * special project sort order
-    * local modules get ..Local as Local
-    * parse doesn't have the filename so it uses <unknown>
-    * use config for corePackages
-    * write cabal file
-    - take the local import prio as an arg
-    * prelude always goes first!
-    * qualified imports go before unqualified ones
-    - sort imports even if there are no changes?
 -}
 module FixImports where
 import Prelude hiding (mod)

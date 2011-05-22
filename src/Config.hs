@@ -19,7 +19,7 @@ defaultConfig localModules = Config (formatGroups localModules)
     (Index.Config packagePriority [])
 
 packagePriority :: [String]
-packagePriority = ["base", "containers", "mtl"]
+packagePriority = ["base", "containers", "directory", "mtl"]
 
 -- | Print out the imports with spacing how I like it.
 formatImports :: [Types.ImportLine] -> String
