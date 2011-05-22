@@ -7,7 +7,7 @@ description:
     A small standalone program to manage the import block of a haskell program.
     It will try to add import lines for qualified names with no corresponding
     import, remove unused import lines, and sort the import block according to
-    some heuristic you can define.  Only works for qualified imports!
+    some heuristic you can define.  This only works for qualified imports!
     Unqualified imports are left untouched.
     .
     It's most convenient if bound to an editor key.

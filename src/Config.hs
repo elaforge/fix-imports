@@ -36,15 +36,21 @@ formatImports imports = unlines $
 -- The local imports are sorted and grouped separately from the package
 -- imports.  Rather than being alphabetical, they are sorted in a per-project
 -- order that should be general-to-specific.
+--
+-- An unqualified import will follow a qualified one.  The Prelude, if
+-- imported, always goes first.
 formatGroups :: [String] -> [Types.ImportLine] -> String
 formatGroups priorities imports =
     unlines $ joinGroups
-        [ showGroups (group (Util.sortOn Types.importModule package))
-        , showGroups (group (Util.sortOn priority local))
+        [ showGroups (group (Util.sortOn packagePrio package))
+        , showGroups (group (Util.sortOn localPrio local))
         ]
     where
-    priority imp =
-        (List.elemIndex (topModule imp) priorities, Types.importModule imp)
+    packagePrio imp = (fromEnum (name imp /= prelude), name imp,
+        fromEnum (not (qualifiedImport imp)))
+    localPrio imp = (listPriority (topModule imp) priorities,
+        name imp, fromEnum (qualifiedImport imp))
+    name = Types.importModule
     (local, package) = List.partition Types.importIsLocal imports
     group = collapse . Util.groupOn topModule
     topModule = takeWhile (/='.') . Types.moduleName . Types.importModule
@@ -56,6 +62,15 @@ formatGroups priorities imports =
         | otherwise = x : collapse xs
     showGroups = concat . List.intersperse [""] . map (map showImport)
     joinGroups = concat . List.intersperse [""] . filter (not . null)
+    prelude = Types.ModuleName "Prelude"
+
+listPriority :: (Eq a) => a -> [a] -> (Int, Maybe Int)
+listPriority x xs = case List.elemIndex x xs of
+    Nothing -> (1, Nothing)
+    Just k -> (0, Just k)
+
+qualifiedImport :: Types.ImportLine -> Bool
+qualifiedImport = Haskell.importQualified . Types.importDecl
 
 showImport :: Types.ImportLine -> String
 showImport (Types.ImportLine imp cmts _) =
@@ -64,3 +79,34 @@ showImport (Types.ImportLine imp cmts _) =
     above = concat [cmt ++ "\n" | Types.Comment Types.CmtAbove cmt <- cmts]
     importLine = Haskell.prettyPrint imp
     right = Util.join "\n" [cmt | Types.Comment Types.CmtRight cmt <- cmts]
+
+{-
+-- t0 = map localPrio imports -- formatGroups priorities (map mkImport imports)
+t0 = formatGroups priorities imports
+    where
+    imports = map mkImport
+        [ ("Data.List", True, Just "List", False)
+        , ("Prelude", False, Nothing, False)
+        , ("Prelude", True, Nothing, False)
+        , local "A.B"
+        , local "A.C"
+        , local "C.A"
+        , local "B.A"
+        , local "B.B"
+        , local "B.C"
+        , local "B.D"
+        ]
+    local name = (name, True, Nothing, True)
+    mkImport (name, qualified, importAs, local) = Types.ImportLine decl [] local
+        where
+        decl = Haskell.ImportDecl empty (Haskell.ModuleName empty name)
+            qualified False Nothing (fmap (Haskell.ModuleName empty) importAs)
+            Nothing
+    empty = Haskell.SrcSpanInfo (Haskell.SrcSpan "" 0 0 0 0) []
+
+    priorities = ["A", "B"]
+    localPrio imp = (listPriority (topModule imp) priorities,
+        name imp, fromEnum (qualifiedImport imp))
+    topModule = takeWhile (/='.') . Types.moduleName . Types.importModule
+    name = Types.importModule
+-}

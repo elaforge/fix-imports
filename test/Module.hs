@@ -1,4 +1,4 @@
-module TestMod (
+module Module (
        x, y, z
 ) where
 import qualified Data.List as C

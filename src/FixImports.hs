@@ -2,11 +2,12 @@
 
     - parse entire file, extract qualified names A.b
     - adjust imports:
-        - imports that were found stay put
-        - unqualified imports stay put
-        - imports not found are removed
+        - used imports stay
+        - unqualified imports stay
+        - unused imports are removed
         - qualified names that were not imported get new imports
             - first search in local directories, then search package db
+
     If there are no imports to be added or removed, the file is returned
     unchanged.  This means it won't sort the imports in this case.
 
@@ -16,19 +17,22 @@
     * local imports go below library ones
     * special project sort order
     * local modules get ..Local as Local
-    - parse doesn't have the filename so it uses <unknown>
+    * parse doesn't have the filename so it uses <unknown>
     * use config for corePackages
-    - write cabal file
+    * write cabal file
+    - take the local import prio as an arg
+    * prelude always goes first!
+    * qualified imports go before unqualified ones
     - sort imports even if there are no changes?
 -}
 module FixImports where
 import Prelude hiding (mod)
 import qualified Control.Monad as Monad
 import qualified Data.Either as Either
+import qualified Data.Generics.Uniplate.Data as Uniplate
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
 import qualified Data.Set as Set
-import qualified Data.Generics.Uniplate.Data as Uniplate
 
 import qualified Language.Haskell.Exts.Annotated as Haskell
 
@@ -40,10 +44,10 @@ import System.FilePath ( (</>) )
 import qualified System.IO as IO
 import qualified System.Process as Process
 
+import qualified Config
 import qualified Index
 import qualified Types
 import qualified Util
-import qualified Config
 
 
 runMain :: Config.Config -> IO ()
