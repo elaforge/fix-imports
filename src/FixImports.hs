@@ -48,6 +48,7 @@ import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
 import qualified Data.Set as Set
 
+import qualified Language.Preprocessor.Cpphs as Cpphs
 import qualified Language.Haskell.Exts.Annotated as Haskell
 
 import qualified System.Directory as Directory
@@ -62,8 +63,6 @@ import qualified Config
 import qualified Index
 import qualified Types
 import qualified Util
-
--- TODO handle cpp
 
 runMain :: Config.Config -> IO ()
 runMain config = do
@@ -109,10 +108,13 @@ data Result = Result {
     } deriving (Show)
 
 fixModule :: Config.Config -> FilePath -> String -> IO (Either String Result)
-fixModule config modulePath text = case parse text of
-    Haskell.ParseFailed srcloc err ->
-        return $ Left $ Haskell.prettyPrint srcloc ++ ": " ++ err
-    Haskell.ParseOk (mod, cmts) -> fixImports config modulePath mod cmts text
+fixModule config modulePath text = do
+    processed <- cppModule modulePath text
+    case parse processed of
+        Haskell.ParseFailed srcloc err ->
+            return $ Left $ Haskell.prettyPrint srcloc ++ ": " ++ err
+        Haskell.ParseOk (mod, cmts) -> fixImports config modulePath mod cmts
+            text
     where
     parse = Haskell.parseFileContentsWithComments $
         Haskell.defaultParseMode
@@ -120,6 +122,28 @@ fixModule config modulePath text = case parse text of
             , Haskell.extensions = [Haskell.CPP]
             , Haskell.fixities = Haskell.baseFixities
             }
+
+-- | The parse function takes a CPP extension, but doesn't actually pay any
+-- attention to it, so I have to run CPP myself.  The imports are fixed
+-- post-CPP so if you put CPP in the imports block it will be stripped out.
+-- Serves you right anyway.
+cppModule :: FilePath -> String -> IO String
+cppModule filename s = Cpphs.runCpphs options filename s
+    where
+    options = Cpphs.defaultCpphsOptions { Cpphs.boolopts = boolOpts }
+    boolOpts = Cpphs.defaultBoolOptions
+        { Cpphs.macros = True
+        , Cpphs.locations = False
+        , Cpphs.hashline = False
+        , Cpphs.pragma = False
+        , Cpphs.stripEol = True
+        , Cpphs.stripC89 = True
+        , Cpphs.lang = True -- lex input as haskell code
+        , Cpphs.ansi = True
+        , Cpphs.layout = True
+        , Cpphs.literate = False -- untested with literate code 
+        , Cpphs.warnings = False
+        }
 
 -- | Take a parsed module along with its unparsed text.  If the imports should
 -- change, generate a new import block with proper spacing, formatting, and
