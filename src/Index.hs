@@ -35,7 +35,7 @@ empty :: Index
 empty = Map.empty
 
 loadIndex :: Config -> IO Index
-loadIndex config = buildIndex config -- TODO load cache?
+loadIndex = buildIndex -- TODO load cache?
 
 buildIndex :: Config -> IO Index
 buildIndex config = do

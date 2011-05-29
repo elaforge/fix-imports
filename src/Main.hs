@@ -12,7 +12,7 @@ import qualified Util
 
 main :: IO ()
 main = do
-    priorities <- fmap words (readEmpty ".fix-imports-priority")
+    priorities <- fmap words (readEmpty "fix-imports-priority")
     FixImports.runMain (Config.defaultConfig priorities)
 
 readEmpty :: FilePath -> IO String

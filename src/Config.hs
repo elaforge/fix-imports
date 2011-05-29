@@ -60,8 +60,8 @@ formatGroups priorities imports =
             [] -> [x]
             y : ys -> (x ++ y) : ys
         | otherwise = x : collapse xs
-    showGroups = concat . List.intersperse [""] . map (map showImport)
-    joinGroups = concat . List.intersperse [""] . filter (not . null)
+    showGroups = List.intercalate [""] . map (map showImport)
+    joinGroups = List.intercalate [""] . filter (not . null)
     prelude = Types.ModuleName "Prelude"
 
 listPriority :: (Eq a) => a -> [a] -> (Int, Maybe Int)

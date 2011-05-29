@@ -1,3 +1,4 @@
+{-# LANGUAGE ScopedTypeVariables #-}
 {- | Automatically fix the import list in a haskell module.
 
     This only really works for qualified names.  The process is as follows:
@@ -39,6 +40,7 @@
 -}
 module FixImports where
 import Prelude hiding (mod)
+import qualified Control.Exception as Exception
 import qualified Control.Monad as Monad
 import qualified Data.Either as Either
 import qualified Data.Generics.Uniplate.Data as Uniplate
@@ -61,6 +63,7 @@ import qualified Index
 import qualified Types
 import qualified Util
 
+-- TODO handle cpp
 
 runMain :: Config.Config -> IO ()
 runMain config = do
@@ -70,6 +73,8 @@ runMain config = do
     (modulePath, verbose) <- parseArgs =<< System.Environment.getArgs
     text <- IO.getContents
     fixed <- fixModule config modulePath text
+        `Exception.catch` (\(exc :: Exception.SomeException) ->
+            return $ Left $ "exception: " ++ show exc)
     case fixed of
         Left err -> do
             IO.putStr text
@@ -91,7 +96,7 @@ parseArgs :: [String] -> IO (String, Bool)
 parseArgs args = case filter (/="-v") args of
         [modulePath] -> return (modulePath, verbose)
         _ -> do
-            IO.hPutStrLn IO.stderr $
+            IO.hPutStrLn IO.stderr
                 "usage: FixImports [ -v ] Module.hs <Module.hs"
             System.Exit.exitFailure
     where
@@ -109,8 +114,12 @@ fixModule config modulePath text = case parse text of
         return $ Left $ Haskell.prettyPrint srcloc ++ ": " ++ err
     Haskell.ParseOk (mod, cmts) -> fixImports config modulePath mod cmts text
     where
-    parse = Haskell.parseFileContentsWithComments
-        (Haskell.defaultParseMode { Haskell.parseFilename = modulePath })
+    parse = Haskell.parseFileContentsWithComments $
+        Haskell.defaultParseMode
+            { Haskell.parseFilename = modulePath
+            , Haskell.extensions = [Haskell.CPP]
+            , Haskell.fixities = Haskell.baseFixities
+            }
 
 -- | Take a parsed module along with its unparsed text.  If the imports should
 -- change, generate a new import block with proper spacing, formatting, and

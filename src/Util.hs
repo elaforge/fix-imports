@@ -10,7 +10,7 @@ import System.FilePath ( (</>) )
 
 -- | Concat a list with 'sep' in between.
 join :: [a] -> [[a]] -> [a]
-join sep = concat . List.intersperse sep
+join = List.intercalate
 
 -- | Split 'xs' on 'sep', dropping 'sep' from the result.
 split :: (Eq a) => [a] -> [a] -> [[a]]
