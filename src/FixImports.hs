@@ -119,7 +119,6 @@ fixModule config modulePath text = do
     parse = Haskell.parseFileContentsWithComments $
         Haskell.defaultParseMode
             { Haskell.parseFilename = modulePath
-            , Haskell.extensions = [Haskell.CPP]
             , Haskell.fixities = Haskell.baseFixities
             }
 

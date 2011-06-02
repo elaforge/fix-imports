@@ -12,16 +12,25 @@ function FixImports()
     " Using a tmp file means I don't have to save the buffer, which the user
     " didn't ask for.
     execute 'write' tmp
-    execute 'silent !FixImports' expand('%') '<' tmp '>' out '2>' err
+    execute 'silent !FixImports -v' expand('%') '<' tmp '>' out '2>' err
     let errs = readfile(err)
     if v:shell_error == 0
         " Is there an easier way to replace the buffer with a file?
         let old_line = line('.')
         let old_col = col('.')
+        let old_total = line('$')
         %d
         execute 'silent :read' out
         0d
-        call cursor(old_line, old_col)
+        let new_total = line('$')
+        " If the import fix added or removed lines I need to take that into
+        " account.  This will be wrong if the cursor was above the import
+        " block.
+        call cursor(old_line + (new_total - old_total), old_col)
+        " The reload will forget fold state.  It was open, right?
+        if foldclosed('.') != -1
+            execute 'normal zO'
+        endif
     endif
     call delete(out)
     call delete(err)
@@ -33,4 +42,3 @@ function FixImports()
         echohl None
     endif
 endfunction
-

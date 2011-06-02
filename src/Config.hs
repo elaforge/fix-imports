@@ -8,7 +8,7 @@ import qualified Index
 
 
 data Config = Config {
-    -- | Format the impor block.
+    -- | Format the import block.
     configShowImports :: [Types.ImportLine] -> String
     -- | See 'Index.Config'.
     , configIndex :: Index.Config
