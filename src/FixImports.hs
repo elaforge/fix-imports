@@ -64,6 +64,11 @@ import qualified Index
 import qualified Types
 import qualified Util
 
+
+usage :: String
+usage = "usage: FixImports [ -v ] Module.hs <Module.hs"
+    ++ "\n\t-v print added and removed modules on stderr"
+
 runMain :: Config.Config -> IO ()
 runMain config = do
     -- I need the module path to search for modules relative to it first.  I
@@ -95,8 +100,7 @@ parseArgs :: [String] -> IO (String, Bool)
 parseArgs args = case filter (/="-v") args of
         [modulePath] -> return (modulePath, verbose)
         _ -> do
-            IO.hPutStrLn IO.stderr
-                "usage: FixImports [ -v ] Module.hs <Module.hs"
+            IO.hPutStrLn IO.stderr usage
             System.Exit.exitFailure
     where
     verbose = "-v" `elem` args
@@ -119,7 +123,7 @@ fixModule config modulePath text = do
     parse = Haskell.parseFileContentsWithComments $
         Haskell.defaultParseMode
             { Haskell.parseFilename = modulePath
-            , Haskell.fixities = Haskell.baseFixities
+            , Haskell.fixities = Config.configFixities config
             }
 
 -- | The parse function takes a CPP extension, but doesn't actually pay any

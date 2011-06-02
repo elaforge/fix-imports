@@ -1,3 +1,8 @@
+-- | This module pulls out a few values I'm more likely to want to configure
+-- per-project.  They are passed to 'FixImports.runMain', so you can write
+-- your own Main.hs that passes its own Config.
+--
+-- TODO dyre does this sort of thing
 module Config where
 import qualified Data.List as List
 import qualified Language.Haskell.Exts.Annotated as Haskell
@@ -12,11 +17,14 @@ data Config = Config {
     configShowImports :: [Types.ImportLine] -> String
     -- | See 'Index.Config'.
     , configIndex :: Index.Config
+    -- | A module can only be parsed if you know the fixities of all the
+    -- operators within it.
+    , configFixities :: [Haskell.Fixity]
     }
 
 defaultConfig :: [String] -> Config
 defaultConfig localModules = Config (formatGroups localModules)
-    (Index.Config packagePriority [])
+    (Index.Config packagePriority []) Haskell.baseFixities
 
 packagePriority :: [String]
 packagePriority = ["base", "containers", "directory", "mtl"]

@@ -7,7 +7,11 @@ See the vimrc for an exmaple of how it can be bound to a key in vim.
 It'll reformat the import lines, including an import list if you have one.
 Sorry about that.  The formatting style of Language.Haskell.Exts.prettyPrint
 is not my personal style.  If it ever bothers me enough maybe I'll write my
-own formatter, or come up with a way to not reformed unqualified imports.
+own formatter, or come up with a way to not reformat unqualified imports.
 
 Also, it will search for modules starting from '.', so you should be in the
 root of the module hierarchy.  It wouldn't be hard to add a -i flag though.
+
+haskell-src-exts will crash the program if it gets an ambigious operator
+fixity parse.  I don't know why it does that, but if you get a crash like that
+you can add your custom operators to the Config.
