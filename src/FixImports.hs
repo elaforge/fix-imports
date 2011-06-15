@@ -117,13 +117,15 @@ fixModule config modulePath text = do
     case parse processed of
         Haskell.ParseFailed srcloc err ->
             return $ Left $ Haskell.prettyPrint srcloc ++ ": " ++ err
-        Haskell.ParseOk (mod, cmts) -> fixImports config modulePath mod cmts
-            text
+        Haskell.ParseOk (mod, cmts) ->
+            fixImports config modulePath mod cmts text
     where
     parse = Haskell.parseFileContentsWithComments $
         Haskell.defaultParseMode
             { Haskell.parseFilename = modulePath
-            , Haskell.fixities = Config.configFixities config
+            -- The meaning of Nothing is undocumented, but I think it means
+            -- to not check for fixity ambiguity at all, which is what I want.
+            , Haskell.fixities = Nothing
             }
 
 -- | The parse function takes a CPP extension, but doesn't actually pay any

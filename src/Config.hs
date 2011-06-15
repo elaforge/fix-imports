@@ -17,14 +17,11 @@ data Config = Config {
     configShowImports :: [Types.ImportLine] -> String
     -- | See 'Index.Config'.
     , configIndex :: Index.Config
-    -- | A module can only be parsed if you know the fixities of all the
-    -- operators within it.
-    , configFixities :: [Haskell.Fixity]
     }
 
 defaultConfig :: [String] -> Config
 defaultConfig localModules = Config (formatGroups localModules)
-    (Index.Config packagePriority []) Haskell.baseFixities
+    (Index.Config packagePriority [])
 
 packagePriority :: [String]
 packagePriority = ["base", "containers", "directory", "mtl"]
