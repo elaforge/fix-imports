@@ -55,9 +55,10 @@ formatGroups priorities imports =
         ]
     where
     packagePrio imp = (fromEnum (name imp /= prelude), name imp,
-        fromEnum (not (qualifiedImport imp)))
+        qualifiedPrio imp)
     localPrio imp = (listPriority (topModule imp) priorities,
-        name imp, fromEnum (qualifiedImport imp))
+        name imp, qualifiedPrio imp)
+    qualifiedPrio imp = fromEnum (not (qualifiedImport imp))
     name = Types.importModule
     (local, package) = List.partition Types.importIsLocal imports
     group = collapse . Util.groupOn topModule
