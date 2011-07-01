@@ -34,9 +34,6 @@
         imports, and groups them by their toplevel module name (before the
         first dot).  Small groups are combined.  They go in alphabetical order
         by default, but a per-project order may be defined.
-
-    - If there are no imports to be added or removed, the file is returned
-    unchanged.  This means it won't sort the imports in this case.
 -}
 module FixImports where
 import Prelude hiding (mod)
@@ -150,39 +147,35 @@ cppModule filename s = Cpphs.runCpphs options filename s
         , Cpphs.warnings = False
         }
 
--- | Take a parsed module along with its unparsed text.  If the imports should
--- change, generate a new import block with proper spacing, formatting, and
--- comments.  Then snip out the import block on the import file, and replace
--- it.  Otherwise, the unparsed input module is returned unchanged.
+-- | Take a parsed module along with its unparsed text.  Generate a new import
+-- block with proper spacing, formatting, and comments.  Then snip out the
+-- import block on the import file, and replace it.
 fixImports :: Config.Config -> FilePath -> Types.Module -> [Haskell.Comment]
     -> String -> IO (Either String Result)
-fixImports config modulePath mod cmts text
-    | Set.null newImports && Set.null unusedImports =
-        return $ Right $ Result text Set.empty Set.empty
-    | otherwise = do
-        -- Don't bother loading the index if I'm not going to use it.
-        -- TODO actually, only load it if I don't find local imports
-        -- I guess Data.Binary's laziness will serve me there
-        index <- if Set.null newImports
-            then return Index.empty
-            else Index.loadIndex (Config.configIndex config)
-        mbNew <- mapM (mkImportLine modulePath index) (Set.toList newImports)
-        mbExisting <- mapM findImport imports
-        let existing = map (Types.importDeclModule . fst) imports
-        let (notFound, importLines) = Either.partitionEithers $
-                zipWith mkError
-                    (map toModule (Set.toList newImports) ++ existing)
-                    (mbNew ++ mbExisting)
-            mkError _ (Just imp) = Right imp
-            mkError mod Nothing = Left mod
-        return $ case notFound of
-            _ : _ -> Left $ "modules not found: "
-                ++ Util.join ", " (map Types.moduleName notFound)
-            [] -> Right $ Result
-                (substituteImports (showImports importLines) range text)
-                (Set.fromList (map (Types.importDeclModule . Types.importDecl)
-                    (Maybe.catMaybes mbNew)))
-                unusedImports
+fixImports config modulePath mod cmts text = do
+    -- Don't bother loading the index if I'm not going to use it.
+    -- TODO actually, only load it if I don't find local imports
+    -- I guess Data.Binary's laziness will serve me there
+    index <- if Set.null newImports
+        then return Index.empty
+        else Index.loadIndex (Config.configIndex config)
+    mbNew <- mapM (mkImportLine modulePath index) (Set.toList newImports)
+    mbExisting <- mapM findImport imports
+    let existing = map (Types.importDeclModule . fst) imports
+    let (notFound, importLines) = Either.partitionEithers $
+            zipWith mkError
+                (map toModule (Set.toList newImports) ++ existing)
+                (mbNew ++ mbExisting)
+        mkError _ (Just imp) = Right imp
+        mkError mod Nothing = Left mod
+    return $ case notFound of
+        _ : _ -> Left $ "modules not found: "
+            ++ Util.join ", " (map Types.moduleName notFound)
+        [] -> Right $ Result
+            (substituteImports (showImports importLines) range text)
+            (Set.fromList (map (Types.importDeclModule . Types.importDecl)
+                (Maybe.catMaybes mbNew)))
+            unusedImports
     where
     (newImports, unusedImports, imports, range) = importInfo mod cmts
     toModule (Types.Qualification name) = Types.ModuleName name
