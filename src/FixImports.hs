@@ -41,18 +41,18 @@ import qualified Control.Exception as Exception
 import qualified Control.Monad as Monad
 import qualified Data.Either as Either
 import qualified Data.Generics.Uniplate.Data as Uniplate
+import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
 import qualified Data.Set as Set
 
-import qualified Language.Preprocessor.Cpphs as Cpphs
 import qualified Language.Haskell.Exts.Annotated as Haskell
-
+import qualified Language.Preprocessor.Cpphs as Cpphs
 import qualified System.Directory as Directory
 import qualified System.Environment
 import qualified System.Exit
 import qualified System.FilePath as FilePath
-import System.FilePath ( (</>) )
+import System.FilePath ((</>))
 import qualified System.IO as IO
 import qualified System.Process as Process
 
@@ -314,30 +314,31 @@ importInfo mod cmts = (missing, redundantModules, declCmts, (start, end))
 
 
 -- | Pair ImportDecls up with the comments that apply to them.  Comments
--- below the last import are dropped.  Comments that are separated from an
--- import by a blank line will also be lost.  It could be fixed but I don't
--- think I write those comments.
+-- below the last import are dropped, but there shouldn't be any of those
+-- because they should have been omitted from the comment block.
 --
--- Also misses cmts that have leading whitespace.  Don't do that.
--- To do it right I'd have to sort imports and cmts and pull cmts off with
--- a foldl.
+-- Spaces between comments above an import will be lost, and multiple comments
+-- to the right of an import (e.g. commenting a complicated import list) will
+-- probably be messed up.  TODO Fix it if it becomes a problem.
 associateComments :: [Types.ImportDecl] -> [Haskell.Comment]
     -> [(Types.ImportDecl, [Types.Comment])]
-associateComments imports cmts = [(imp, cmtsFor imp) | imp <- imports]
+associateComments imports cmts = snd $ List.mapAccumL associate cmts imports
     where
-    cmtsFor imp = Util.mapMaybe (associate src) cmts
-        where src = Haskell.srcInfoSpan (Haskell.importAnn imp)
-    associate src (Haskell.Comment block csrc text)
-        | start csrc == end csrc && start csrc `within` src =
-            Just $ Types.Comment Types.CmtRight cmt
-        | Haskell.srcSpanStartColumn csrc == 1 && end csrc + 1 == start src =
-            Just $ Types.Comment Types.CmtAbove cmt
-        | otherwise = Nothing
+    associate cmts imp = (after, (imp, associated))
         where
-        cmt = if block then "{-" ++ text ++ "-}" else "--" ++ text
+        associated = map (Types.Comment Types.CmtAbove . cmtText) above
+            ++ map (Types.Comment Types.CmtRight . cmtText) right
+        -- cmts that end before the import beginning are above it
+        (above, rest) = List.span ((< start impSpan) . end . cmtSpan) cmts
+        -- remaining cmts that start before or at the import's end are right
+        -- of it
+        (right, after) = List.span ((<= end impSpan) . start . cmtSpan) rest
+        impSpan = Haskell.srcInfoSpan (Haskell.importAnn imp)
+    cmtSpan (Haskell.Comment _ span _) = span
+    cmtText (Haskell.Comment True _ s) = "{-" ++ s ++ "-}"
+    cmtText (Haskell.Comment False _ s) = "--" ++ s
     start = Haskell.srcSpanStartLine
     end = Haskell.srcSpanEndLine
-    within line src = line >= start src && line <= end src
 
 parse :: String -> (Types.Module -> [Haskell.Comment] -> a) -> Either String a
 parse text f = case Haskell.parseFileContentsWithComments mode text of
@@ -370,9 +371,9 @@ moduleQNames mod = [Types.moduleToQualification m
     | Haskell.Qual _ m _ <- Uniplate.universeBi mod]
 
 
-{-
 -- * test
 
+{-
 test = do
     res <- fixModule (Config.defaultConfig ["base"])  "TestMod.hs" tmod
     case res of
@@ -396,6 +397,7 @@ tmod = "module TestMod (\n\
 \) where\n\
 \import qualified Data.List as C\n\
 \-- I want this comment\n\
+\-- And this one\n\
 \import qualified Util -- cmt right\n\
 \import qualified Extra as Biz {- block cmt -}\n\
 \import Data.Map (a,\n\
