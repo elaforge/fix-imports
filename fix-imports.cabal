@@ -1,5 +1,5 @@
 name: fix-imports
-version: 0.1.1
+version: 0.1.2
 cabal-version: >= 1.6
 build-type: Simple
 synopsis: Program to manage the imports of a haskell module
