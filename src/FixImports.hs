@@ -39,6 +39,7 @@ module FixImports where
 import Prelude hiding (mod)
 import qualified Control.Exception as Exception
 import qualified Control.Monad as Monad
+import qualified Data.Char as Char
 import qualified Data.Either as Either
 import qualified Data.Generics.Uniplate.Data as Uniplate
 import qualified Data.List as List
@@ -239,7 +240,8 @@ findFile file depth dir = fmap (fmap FilePath.normalise) $
     descend = do
         subdirs <- Monad.filterM Directory.doesDirectoryExist
             =<< Util.listDir dir
-        Util.untilJust (findFile file (depth-1)) subdirs
+        Util.untilJust (findFile file (depth-1))
+            (filter (all Char.isUpper . take 1) subdirs)
     current = dir </> file
 
 
