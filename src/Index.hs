@@ -3,6 +3,7 @@
 module Index where
 import Prelude hiding (mod)
 import Control.Applicative ( (<$>) )
+import Control.Monad.Instances () -- Monad (Either x) instance
 import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified System.Process as Process
@@ -102,5 +103,4 @@ tdump =
     [ "name: base", "exposed: True", "exposed-modules: Data.List Data.Map"
     , "name: mtl", "exposed: True", "exposed-modules: Monad.B.List"
     ]
-
 -}
