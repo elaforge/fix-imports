@@ -23,6 +23,10 @@ ifM cond consequent alternative = do
     b <- cond
     if b then consequent else alternative
 
+anyM :: (a -> IO Bool) -> [a] -> IO Bool
+anyM _ [] = return False
+anyM f (x:xs) = ifM (f x) (return True) (anyM f xs)
+
 mapMaybe :: (a -> Maybe b) -> [a] -> [b]
 mapMaybe f xs = [b | Just b <- map f xs]
 

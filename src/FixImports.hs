@@ -49,6 +49,7 @@ import qualified Data.Set as Set
 
 import qualified Language.Haskell.Exts.Annotated as Haskell
 import qualified Language.Preprocessor.Cpphs as Cpphs
+import qualified System.Console.GetOpt as GetOpt
 import qualified System.Directory as Directory
 import qualified System.Environment
 import qualified System.Exit
@@ -63,18 +64,15 @@ import qualified Types
 import qualified Util
 
 
-usage :: String
-usage = "usage: FixImports [ -v ] Module.hs <Module.hs"
-    ++ "\n\t-v print added and removed modules on stderr"
-
 runMain :: Config.Config -> IO ()
 runMain config = do
     -- I need the module path to search for modules relative to it first.  I
     -- could figure it out from the parsed module name, but a main module may
     -- not have a name.
-    (modulePath, verbose) <- parseArgs =<< System.Environment.getArgs
+    (modulePath, (verbose, includes)) <-
+        parseArgs =<< System.Environment.getArgs
     text <- IO.getContents
-    fixed <- fixModule config modulePath text
+    fixed <- fixModule includes config modulePath text
         `Exception.catch` (\(exc :: Exception.SomeException) ->
             return $ Left $ "exception: " ++ show exc)
     case fixed of
@@ -94,14 +92,29 @@ runMain config = do
         | Set.null xs = "[]"
         | otherwise = (Util.join ", " . map Types.moduleName . Set.toList) xs
 
-parseArgs :: [String] -> IO (String, Bool)
-parseArgs args = case filter (/="-v") args of
-        [modulePath] -> return (modulePath, verbose)
-        _ -> do
-            IO.hPutStrLn IO.stderr usage
-            System.Exit.exitFailure
+data Flag = Verbose | Include String
+    deriving (Eq, Show)
+
+options :: [GetOpt.OptDescr Flag]
+options =
+    [ GetOpt.Option ['v'] [] (GetOpt.NoArg Verbose)
+        "print added and removed modules on stderr"
+    , GetOpt.Option ['i'] [] (GetOpt.ReqArg Include "path")
+        "add to module include path"
+    ]
+
+usage :: String -> IO a
+usage msg =
+    putStr (GetOpt.usageInfo (msg ++ help) options) >> System.Exit.exitFailure
     where
-    verbose = "-v" `elem` args
+    help = "FixImports Module.hs <Module.hs"
+
+parseArgs :: [String] -> IO (String, (Bool, [FilePath]))
+parseArgs args = case GetOpt.getOpt GetOpt.Permute options args of
+    (flags, [modulePath], []) -> return (modulePath, parse flags)
+    (_, [], errs) -> usage $ concat errs
+    _ -> usage "too many args\n"
+    where parse flags = (Verbose `elem` flags, [p | Include p <- flags])
 
 data Result = Result {
     resultText :: String
@@ -109,14 +122,15 @@ data Result = Result {
     , resultRemoved :: Set.Set Types.ModuleName
     } deriving (Show)
 
-fixModule :: Config.Config -> FilePath -> String -> IO (Either String Result)
-fixModule config modulePath text = do
+fixModule :: [FilePath] -> Config.Config -> FilePath -> String
+    -> IO (Either String Result)
+fixModule includes config modulePath text = do
     processed <- cppModule modulePath text
     case parse processed of
         Haskell.ParseFailed srcloc err ->
             return $ Left $ Haskell.prettyPrint srcloc ++ ": " ++ err
         Haskell.ParseOk (mod, cmts) ->
-            fixImports config modulePath mod cmts text
+            fixImports includes config modulePath mod cmts text
     where
     parse = Haskell.parseFileContentsWithComments $
         Haskell.defaultParseMode
@@ -151,9 +165,9 @@ cppModule filename s = Cpphs.runCpphs options filename s
 -- | Take a parsed module along with its unparsed text.  Generate a new import
 -- block with proper spacing, formatting, and comments.  Then snip out the
 -- import block on the import file, and replace it.
-fixImports :: Config.Config -> FilePath -> Types.Module -> [Haskell.Comment]
-    -> String -> IO (Either String Result)
-fixImports config modulePath mod cmts text = do
+fixImports :: [FilePath] -> Config.Config -> FilePath -> Types.Module
+    -> [Haskell.Comment] -> String -> IO (Either String Result)
+fixImports includes config modulePath mod cmts text = do
     -- Don't bother loading the index if I'm not going to use it.
     -- TODO actually, only load it if I don't find local imports
     -- I guess Data.Binary's laziness will serve me there
@@ -161,7 +175,7 @@ fixImports config modulePath mod cmts text = do
         then return Index.empty
         else Index.loadIndex (Config.configIndex config)
     mbNew <- mapM (mkImportLine modulePath index) (Set.toList newImports)
-    mbExisting <- mapM findImport imports
+    mbExisting <- mapM (findImport includes) imports
     let existing = map (Types.importDeclModule . fst) imports
     let (notFound, importLines) = Either.partitionEithers $
             zipWith mkError
@@ -249,23 +263,25 @@ findFile file depth dir = fmap (fmap FilePath.normalise) $
 
 -- | Make an existing import into an ImportLine by finding out if it's a local
 -- module or a package module.
-findImport :: (Types.ImportDecl, [Types.Comment]) -> IO (Maybe Types.ImportLine)
-findImport (imp, cmts) = do
-    found <- findModuleName (Types.importDeclModule imp)
+findImport :: [FilePath] -> (Types.ImportDecl, [Types.Comment])
+    -> IO (Maybe Types.ImportLine)
+findImport includes (imp, cmts) = do
+    found <- findModuleName includes (Types.importDeclModule imp)
     return $ case found of
         Nothing -> Nothing
         Just local -> Just $ Types.ImportLine imp cmts local
 
 -- | True if it was found in a local directory, False if it was found in the
 -- ghc package db, and Nothing if it wasn't found at all.
-findModuleName :: Types.ModuleName -> IO (Maybe Bool)
-findModuleName mod =
-    Util.ifM (isLocalModule mod) (return (Just True)) $
+findModuleName :: [FilePath] -> Types.ModuleName -> IO (Maybe Bool)
+findModuleName includes mod =
+    Util.ifM (isLocalModule mod ("" : includes)) (return (Just True)) $
         Util.ifM (isPackageModule mod) (return (Just False))
             (return Nothing)
 
-isLocalModule :: Types.ModuleName -> IO Bool
-isLocalModule = Directory.doesFileExist . moduleToPath
+isLocalModule :: Types.ModuleName -> [FilePath] -> IO Bool
+isLocalModule mod =
+    Util.anyM (Directory.doesFileExist . (</> moduleToPath mod))
 
 isPackageModule :: Types.ModuleName -> IO Bool
 isPackageModule (Types.ModuleName name) = do
