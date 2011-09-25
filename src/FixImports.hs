@@ -37,6 +37,7 @@
 -}
 module FixImports where
 import Prelude hiding (mod)
+import Control.Applicative ((<$>))
 import qualified Control.Exception as Exception
 import qualified Control.Monad as Monad
 import qualified Data.Char as Char
@@ -114,7 +115,8 @@ parseArgs args = case GetOpt.getOpt GetOpt.Permute options args of
     (flags, [modulePath], []) -> return (modulePath, parse flags)
     (_, [], errs) -> usage $ concat errs
     _ -> usage "too many args\n"
-    where parse flags = (Verbose `elem` flags, [p | Include p <- flags])
+    where parse flags = (Verbose `elem` flags, "." : [p | Include p <- flags])
+    -- Includes always have the current directory first.
 
 data Result = Result {
     resultText :: String
@@ -174,7 +176,8 @@ fixImports includes config modulePath mod cmts text = do
     index <- if Set.null newImports
         then return Index.empty
         else Index.loadIndex (Config.configIndex config)
-    mbNew <- mapM (mkImportLine modulePath index) (Set.toList newImports)
+    mbNew <- mapM (mkImportLine includes modulePath index)
+        (Set.toList newImports)
     mbExisting <- mapM (findImport includes) imports
     let existing = map (Types.importDeclModule . fst) imports
     let (notFound, importLines) = Either.partitionEithers $
@@ -208,10 +211,10 @@ substituteImports imports (start, end) text =
 -- * find new imports
 
 -- | Make a new ImportLine from a ModuleName.
-mkImportLine :: FilePath -> Index.Index -> Types.Qualification
+mkImportLine :: [FilePath] -> FilePath -> Index.Index -> Types.Qualification
     -> IO (Maybe Types.ImportLine)
-mkImportLine modulePath index qual@(Types.Qualification name) = do
-    found <- findModule index modulePath qual
+mkImportLine includes modulePath index qual@(Types.Qualification name) = do
+    found <- findModule includes index modulePath qual
     return $ case found of
         Nothing -> Nothing
         Just (mod, local) -> Just (Types.ImportLine (mkImport mod) [] local)
@@ -226,10 +229,10 @@ mkImportLine modulePath index qual@(Types.Qualification name) = do
 
 -- | Find the qualification and its ModuleName and True if it was a local
 -- import.  Nothing if it wasn't found at all.
-findModule :: Index.Index -> FilePath -> Types.Qualification
+findModule :: [FilePath] -> Index.Index -> FilePath -> Types.Qualification
     -> IO (Maybe (Types.ModuleName, Bool))
-findModule index modulePath qual = do
-    found <- findLocalModule modulePath qual
+findModule includes index modulePath qual = do
+    found <- findLocalModule includes modulePath qual
     return $ case found of
         Just path -> Just (pathToModule path, True)
         Nothing -> case Map.lookup qual index of
@@ -238,14 +241,27 @@ findModule index modulePath qual = do
 
 -- | Given A.B, look for A/B.hs, */A/B.hs, */*/A/B.hs, etc.  Look in the
 -- directory of the current module first.
-findLocalModule :: FilePath -> Types.Qualification -> IO (Maybe String)
-findLocalModule modulePath (Types.Qualification name) = do
-    found <- findFile path 0 dir
-    maybe (findFile path 4 ".") (return . Just) found
+findLocalModule :: [FilePath] -> FilePath -> Types.Qualification
+    -> IO (Maybe String)
+findLocalModule includes modulePath (Types.Qualification name) =
+    Util.untilJust $
+        findFile path 0 moduleDir : map (findFileStrip path 4) includes
     where
     path = moduleToPath (Types.ModuleName name)
-    dir = FilePath.takeDirectory modulePath
+    moduleDir = FilePath.takeDirectory modulePath
 
+-- | Like 'findFile', but strip the base directory name from the front of the
+-- returned file.
+findFileStrip :: FilePath -> Int -> FilePath -> IO (Maybe FilePath)
+findFileStrip file depth dir = do
+    fmap (dropWhile (=='/') . strip dir) <$> findFile file depth dir
+    where
+    strip xs ys
+        | take (length xs) ys == xs = drop (length xs) ys
+        | otherwise = ys
+
+-- | Find the file somewhere below the given directory, giving up after
+-- descending the given depth.
 findFile :: FilePath -> Int -> FilePath -> IO (Maybe FilePath)
 findFile file depth dir = fmap (fmap FilePath.normalise) $
     Util.ifM (Directory.doesFileExist current) (return (Just current)) $
@@ -254,9 +270,10 @@ findFile file depth dir = fmap (fmap FilePath.normalise) $
     descend = do
         subdirs <- Monad.filterM Directory.doesDirectoryExist
             =<< Util.listDir dir
-        Util.untilJust (findFile file (depth-1))
-            (filter (all Char.isUpper . take 1) subdirs)
+        Util.untilJust $
+            map (findFile file (depth-1)) (filter isModuleDir subdirs)
     current = dir </> file
+    isModuleDir = all Char.isUpper . take 1 . FilePath.takeFileName
 
 
 -- * figure out existing imports

@@ -37,9 +37,10 @@ sortOn :: (Ord k) => (a -> k) -> [a] -> [a]
 sortOn key = List.sortBy (compare `Function.on` key)
 
 -- | Keep running the action until it returns a Just.
-untilJust :: (a -> IO (Maybe b)) -> [a] -> IO (Maybe b)
-untilJust _ [] = return Nothing
-untilJust f (x:xs) = maybe (untilJust f xs) (return . Just) =<< f x
+untilJust :: [IO (Maybe a)] -> IO (Maybe a)
+untilJust [] = return Nothing
+untilJust (m:ms) = do
+    maybe (untilJust ms) (return . Just) =<< m
 
 -- * file
 
