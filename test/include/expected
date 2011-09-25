@@ -1,0 +1,5 @@
+module Main where
+import qualified A
+import qualified Sub.B as B
+
+f = A.Z + B.Z

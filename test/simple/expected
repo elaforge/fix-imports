@@ -1,0 +1,4 @@
+import qualified A.Used as Used
+
+f :: Used.A -> Used.B
+f x = x * 2

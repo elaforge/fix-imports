@@ -1,0 +1,46 @@
+#!/bin/zsh
+
+setopt extended_glob
+
+cd $(dirname $0)
+bin=../../dist/build/FixImports/FixImports
+
+tests=$*
+if [[ -z $tests ]]; then
+    tests=$(echo *(/))
+fi
+
+tmp=$(mktemp -t fix-imports)
+
+function test() {
+    pushd $1
+    local flags=
+    if [[ -r flags ]]; then
+        flags=$(cat flags)
+    fi
+    $bin ${=flags} Main.hs <Main.hs >& $tmp
+    diff $tmp expected
+    local failed=$?
+    if [[ $failed != 0 ]]; then
+        echo '==== FAILED'
+        echo '==== expected:'
+        cat expected
+        echo '==== got:'
+        cat $tmp
+    fi
+    popd
+    return $failed
+}
+
+failed=0
+for test in ${=tests}; do
+    if ! test $test; then
+        failed=1
+        break
+    else
+        echo $test passed
+    fi
+done
+
+rm -f $tmp
+exit $failed

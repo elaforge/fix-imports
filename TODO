@@ -1,0 +1,6 @@
+- comment on line above import e.g.
+
+{-# LANGUAGE ScopedTypeVariables #-} -- for pattern type sig in catch
+import qualified Control.Concurrent as Concurrent
+
+comment gets duplicated
