@@ -1,4 +1,5 @@
 {-# LAGUAGE SomeExtension #-} -- comment on LANGUAGE
+-- | Module haddock.
 import qualified Control.Monad as Biz {- block cmt for Biz -}
 import qualified Data.List as C
 -- cmt1 for Data.Map

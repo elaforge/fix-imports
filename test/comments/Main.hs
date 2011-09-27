@@ -1,4 +1,5 @@
 {-# LAGUAGE SomeExtension #-} -- comment on LANGUAGE
+-- | Module haddock.
 import qualified Data.List as C
 -- cmt1 for Data.Map
 -- cmt2 for Data.Map

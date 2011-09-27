@@ -320,7 +320,7 @@ importInfo :: Types.Module -> [Haskell.Comment]
     -> (Set.Set Types.Qualification, Set.Set Types.ModuleName,
         [(Types.ImportDecl, [Types.Comment])], (Int, Int))
     -- ^ (newModules, unusedModules, moduleToImport, rangeOfImportBlock).
-importInfo mod cmts = (missing, redundantModules, declCmts, (start, end))
+importInfo mod cmts = (missing, redundantModules, declCmts, range)
     where
     redundant = Set.difference imported used
     missing = Set.difference used imported
@@ -337,15 +337,20 @@ importInfo mod cmts = (missing, redundantModules, declCmts, (start, end))
 
     used = Set.fromList (moduleQNames mod)
     imports = moduleImportDecls mod
-    declCmts = [imp | imp@(decl, _) <- associateComments imports importCmts,
-        keepImport decl]
+    declCmts =
+        [ imp | imp@(decl, _)
+        <- associateComments imports (filterImportCmts range cmts)
+        , keepImport decl
+        ]
     -- Keep unqualified imports, but only keep qualified ones if they are used.
     keepImport = maybe True (`Set.member` used) . Types.importDeclQualification
+    range = importRange mod
 
-    (start, end) = importSpan mod
-    importCmts = filter inRange cmts
-    inRange (Haskell.Comment _ src _) = s >= start && s < end
-        where s = Haskell.srcSpanStartLine src
+filterImportCmts :: (Int, Int) -> [Haskell.Comment] -> [Haskell.Comment]
+filterImportCmts (start, end) = filter inRange
+    where
+    inRange (Haskell.Comment _ src _) = start <= s && s < end
+        where s = Haskell.srcSpanStartLine src - 1 -- spans are 1-based
 
 
 -- | Pair ImportDecls up with the comments that apply to them.  Comments
@@ -375,69 +380,38 @@ associateComments imports cmts = snd $ List.mapAccumL associate cmts imports
     start = Haskell.srcSpanStartLine
     end = Haskell.srcSpanEndLine
 
-parse :: String -> (Types.Module -> [Haskell.Comment] -> a) -> Either String a
-parse text f = case Haskell.parseFileContentsWithComments mode text of
-    Haskell.ParseFailed srcloc err ->
-        Left $ Haskell.prettyPrint srcloc ++ ": " ++ err
-    Haskell.ParseOk (mod, comments) -> Right (f mod comments)
-    where mode = Haskell.defaultParseMode
-
 moduleImportDecls :: Types.Module -> [Types.ImportDecl]
 moduleImportDecls (Haskell.Module _ _ _ imports _) = imports
 moduleImportDecls _ = []
 
 -- | Return half-open line range of import block, starting from (0 based) line
 -- of first import to the line after the last one.
-importSpan :: Types.Module -> (Int, Int)
-importSpan m = case m of
-        Haskell.Module _ _ _ imports@(_:_) _ ->
-            (start (Haskell.importAnn (head imports)) - 1,
-                end (Haskell.importAnn (last imports)))
-        Haskell.Module _ (Just (Haskell.ModuleHead src _ _ _)) _ _ _ ->
-            (end src, end src)
+importRange :: Types.Module -> (Int, Int)
+importRange mod = case mod of
+        -- Haskell.Module _ mb_head _ imports _ ->
+        --     let start = headEnd mb_head
+        --     in (start, max start (importsEnd imports))
+        Haskell.Module _ Nothing _ imports _ ->
+            (importsStart imports, importsEnd imports)
+        Haskell.Module _ (Just modHead) _ imports _ ->
+            let start = headEnd modHead
+            in (start, max start (importsEnd imports))
         _ -> (0, 0)
     where
-    start = Haskell.srcSpanStartLine . Haskell.srcInfoSpan
-    end = Haskell.srcSpanEndLine . Haskell.srcInfoSpan
+    -- The parser counts lies from 1, but I return a half-open range from 0.
+    -- So I don't need to +1 the last line of the head, and since the range
+    -- is half-open I don't need to -1 the last line of the imports.
+    headEnd (Haskell.ModuleHead src _ _ _) = endOf src
+    importsStart [] = 0
+    importsStart (importDecl : _) =
+        startOf (Haskell.importAnn importDecl) - 1
+    importsEnd [] = 0
+    importsEnd imports = (endOf . Haskell.importAnn . last) imports
+
+    startOf = Haskell.srcSpanStartLine . Haskell.srcInfoSpan
+    endOf = Haskell.srcSpanEndLine . Haskell.srcInfoSpan
 
 -- | Uniplate is rad.
 moduleQNames :: Types.Module -> [Types.Qualification]
 moduleQNames mod = [Types.moduleToQualification m
     | Haskell.Qual _ m _ <- Uniplate.universeBi mod]
-
-
--- * test
-
-{-
-test = do
-    res <- fixModule (Config.defaultConfig ["base"])  "TestMod.hs" tmod
-    case res of
-        Right res -> do
-            putStr (resultText res)
-            putStrLn $ "added: " ++ show (resultAdded res)
-            putStrLn $ "removed: " ++ show (resultRemoved res)
-        Left err -> putStrLn $ "error: " ++ err
-
-t0 = parse tmod $ \mod _ -> moduleImportDecls mod
-t1 = parse tmod $ \mod _ -> show (moduleQNames mod)
-t2 = parse tmod importInfo
-t3 = parse tmod $ \mod cmts ->
-    [(Haskell.importModule imp, cs)
-        | (imp, cs) <- associateComments (moduleImportDecls mod) cmts]
-
-Right (mod0, cs0) = parse tmod (,)
-
-tmod = "module TestMod (\n\
-\       x, y, z\n\
-\) where\n\
-\import qualified Data.List as C\n\
-\-- I want this comment\n\
-\-- And this one\n\
-\import qualified Util -- cmt right\n\
-\import qualified Extra as Biz {- block cmt -}\n\
-\import Data.Map (a,\n\
-\       b)\n\
-\\n\
-\f :: Util.One -> Midi.New.Two -> Util.Foo -> C.Result\n\
-\f x = x * C.z\n"
--}
