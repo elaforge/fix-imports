@@ -268,8 +268,9 @@ findFile file depth dir = fmap (fmap FilePath.normalise) $
         if depth <= 0 then return Nothing else descend
     where
     descend = do
-        subdirs <- Monad.filterM Directory.doesDirectoryExist
-            =<< Util.listDir dir
+        subdirs <- Util.ifM (Directory.doesDirectoryExist dir)
+            (Monad.filterM Directory.doesDirectoryExist =<< Util.listDir dir)
+            (return [])
         Util.untilJust $
             map (findFile file (depth-1)) (filter isModuleDir subdirs)
     current = dir </> file
