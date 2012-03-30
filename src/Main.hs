@@ -1,19 +1,40 @@
--- | Main file for FixImports that uses the default formatting.  Since import
--- priority is per-project, it reads it from a file in the current directory.
+-- | Main file for FixImports that uses the default formatting.  It reads
+-- a config file from the current directory.
 --
 -- More documentation in "FixImports".
 module Main where
-import qualified System.Directory as Directory
+import Control.Monad
+import qualified Data.List as List
+import qualified Data.Map as Map
+import qualified System.IO as IO
 
 import qualified Config
 import qualified FixImports
+import qualified Index
+import qualified Types
 import qualified Util
 
 
 main :: IO ()
 main = do
-    priorities <- fmap words (readEmpty "fix-imports-priority")
-    FixImports.runMain (Config.defaultConfig priorities)
+    let deflt = (Config.ImportOrder [], Config.defaultPriorities, [])
+    (order, prios, warns) <- fmap (maybe deflt parse) $
+        Util.catchENOENT $ readFile ".fix-imports"
+    unless (null warns) $
+        IO.hPutStrLn IO.stderr $
+            "warnings unrecognized fields in .fix-imports: "
+            ++ List.intercalate ", " warns
+    FixImports.runMain (Config.config order prios)
 
-readEmpty :: FilePath -> IO String
-readEmpty fn = Util.ifM (Directory.doesFileExist fn) (readFile fn) (return "")
+parse :: String -> (Config.ImportOrder, Config.Priorities, [String])
+parse text = (order, prios, extra)
+    where
+    extra = Map.keys config List.\\ valid
+    valid = ["import-order", "prio-package-high", "prio-package-low",
+        "prio-module-high", "prio-module-low"]
+    order = Config.ImportOrder (getModules "import-order")
+    prios = Config.Priorities (get "prio-package-high", get "prio-package-low")
+        (getModules "prio-module-high", getModules "prio-module-low")
+    config = Map.fromList $ Index.parseSections text
+    getModules = map Types.ModuleName . get
+    get k = Map.findWithDefault [] k config

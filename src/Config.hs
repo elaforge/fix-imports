@@ -6,25 +6,87 @@
 module Config where
 import qualified Data.List as List
 import qualified Language.Haskell.Exts.Annotated as Haskell
+import qualified System.FilePath as FilePath
 
+import qualified Index
 import qualified Types
 import qualified Util
-import qualified Index
 
 
 data Config = Config {
+    -- | Additional directories to search for local modules.  Taken from the
+    -- -i flag.
+    configIncludes :: [FilePath]
     -- | Format the import block.
-    configShowImports :: [Types.ImportLine] -> String
-    -- | See 'Index.Config'.
-    , configIndex :: Index.Config
+    , configShowImports :: [Types.ImportLine] -> String
+    -- | Often multiple modules from the package index will match
+    -- a qualification.  Apply some heuristics to pick the most likely one.
+    , configPickModule :: FilePath -> [(Maybe Index.Package, Types.ModuleName)]
+        -> Maybe (Maybe Index.Package, Types.ModuleName)
     }
 
-defaultConfig :: [String] -> Config
-defaultConfig localModules = Config (formatGroups localModules)
-    (Index.Config packagePriority [])
+config :: ImportOrder -> Priorities -> Config
+config order prios = Config
+    { configIncludes = []
+    , configShowImports = formatGroups order
+    , configPickModule = pickModule prios
+    }
 
-packagePriority :: [String]
-packagePriority = ["base", "containers", "directory", "mtl"]
+data Priorities = Priorities {
+    -- | Place these packages either first or last in priority.
+    prioPackage :: ([Index.Package], [Index.Package])
+    -- | Place these modules either first or last in priority.
+    , prioModule :: ([Types.ModuleName], [Types.ModuleName])
+    } deriving (Show)
+
+-- | Sort order for local modules.
+newtype ImportOrder = ImportOrder [Types.ModuleName]
+    deriving (Show)
+
+
+defaultPriorities :: Priorities
+defaultPriorities = Priorities
+    ([], []) (map Types.ModuleName ["Data"], map Types.ModuleName ["GHC"])
+
+-- * pick candidates
+
+-- | Prefer local modules that share prefix with the module path, then prefer
+-- local modules to ones from packages, then prefer modules from the packages
+-- in packagePriority.
+pickModule :: Priorities -> FilePath
+    -> [(Maybe Index.Package, Types.ModuleName)]
+    -> Maybe (Maybe Index.Package, Types.ModuleName)
+pickModule prios modulePath candidates =
+    Util.head $ Util.sortOn (uncurry (prioritize prios modulePath)) candidates
+
+prioritize :: Priorities -> FilePath -> Maybe String -> Types.ModuleName
+    -> ((Int, Int), Int)
+prioritize prios modulePath mbPackage mod =
+    (packagePrio (prioPackage prios) mbPackage,
+        modulePrio (prioModule prios) mod)
+    where
+    packagePrio _ Nothing = (localPrio modulePath mod, 0)
+    packagePrio (high, low) (Just pack) = (1, searchPrio high low pack)
+    modulePrio (high, low) =
+        searchPrio (map Types.moduleName high) (map Types.moduleName low)
+        . Types.moduleName
+    -- dots = length . filter (=='.') . Types.moduleName
+
+-- | Lower numbers for modules that share more prefix with the module's path.
+-- A/B/Z.hs vs A.B.C -> -2
+-- A/Z.hs vs B -> 0
+localPrio :: FilePath -> Types.ModuleName -> Int
+localPrio modulePath mod = negate $ length $ takeWhile id $ zipWith (==)
+    (Util.split "/" (Types.moduleToPath mod))
+    (Util.split "/" (FilePath.takeDirectory modulePath))
+
+searchPrio :: [String] -> [String] -> String -> Int
+searchPrio high low mod = case List.findIndex (`List.isPrefixOf` mod) high of
+    Just n -> - length high + n
+    Nothing -> maybe 0 (+1) (List.findIndex (`List.isPrefixOf` mod) low)
+
+
+-- * format imports
 
 -- | Print out the imports with spacing how I like it.
 formatImports :: [Types.ImportLine] -> String
@@ -44,8 +106,8 @@ formatImports imports = unlines $
 --
 -- An unqualified import will follow a qualified one.  The Prelude, if
 -- imported, always goes first.
-formatGroups :: [String] -> [Types.ImportLine] -> String
-formatGroups priorities imports =
+formatGroups :: ImportOrder -> [Types.ImportLine] -> String
+formatGroups (ImportOrder order) imports =
     unlines $ joinGroups
         [ showGroups (group (Util.sortOn packagePrio package))
         , showGroups (group (Util.sortOn localPrio local))
@@ -53,7 +115,7 @@ formatGroups priorities imports =
     where
     packagePrio imp = (fromEnum (name imp /= prelude), name imp,
         qualifiedPrio imp)
-    localPrio imp = (listPriority (topModule imp) priorities,
+    localPrio imp = (listPriority (topModule imp) (map Types.moduleName order),
         name imp, qualifiedPrio imp)
     qualifiedPrio imp = fromEnum (not (qualifiedImport imp))
     name = Types.importModule

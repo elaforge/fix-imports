@@ -1,0 +1,14 @@
+* Read per-project priorities so e.g. it looks for Data.Map before Util.Map
+or Util.PPrint before App.PPrint
+
+* Also need prio within system libs, e.g. GHC.* modules should be low prio
+
+* Should search in subdirs of current top level module name?  E.g., in
+Derive.Call.Note, Internal gets Cmd.Internal, not Derive.Deriver.Internal
+
+- Index should use Text instead of String
+
+- If the choice is still ambiguous I could ask interactively.
+
+- Or write a simple tool to analyze existing code and assign priorities
+based on how often each is imported.

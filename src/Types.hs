@@ -1,5 +1,6 @@
 module Types where
 import qualified Language.Haskell.Exts.Annotated as Haskell
+import qualified System.FilePath as FilePath
 
 
 data ImportLine = ImportLine {
@@ -26,6 +27,15 @@ newtype ModuleName = ModuleName String
 moduleName :: ModuleName -> String
 moduleName (ModuleName n) = n
 
+pathToModule :: FilePath -> ModuleName
+pathToModule = ModuleName
+    .  map (\c -> if c == '/' then '.' else c) . FilePath.dropExtension
+
+moduleToPath :: ModuleName -> FilePath
+moduleToPath (ModuleName name) =
+    map (\c -> if c == '.' then '/' else c) name ++ ".hs"
+
+
 -- | Get the qualified name from a qualified import, if it is a qualified
 -- import.
 importDeclQualification :: ImportDecl -> Maybe Qualification
@@ -45,5 +55,5 @@ importModule = importDeclModule . importDecl
 -- | The parser represents the \'as\' part of an import as a ModuleName even
 -- though it's actually a Qualification.
 moduleToQualification :: Haskell.ModuleName Haskell.SrcSpanInfo
-    -> Types.Qualification
-moduleToQualification (Haskell.ModuleName _ s) = Types.Qualification s
+    -> Qualification
+moduleToQualification (Haskell.ModuleName _ s) = Qualification s

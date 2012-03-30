@@ -2,80 +2,69 @@
 -- db that this Qualification probably intends.
 module Index where
 import Prelude hiding (mod)
-import Control.Applicative ( (<$>) )
-import Control.Monad.Instances () -- Monad (Either x) instance
+import Control.Applicative ((<$>))
+import Control.Monad
+import qualified Data.Either as Either
 import qualified Data.List as List
 import qualified Data.Map as Map
+
+import qualified System.IO as IO
 import qualified System.Process as Process
 
 import qualified Types
 import qualified Util
 
 
-data Config = Config {
-    -- | The modules in the packages earlier in this list will override those
-    -- later.  So even if there's a package with @Some.Obscure.List@, @List@
-    -- will still map to @Data.List@ because @containers@ gets priority.
-    --
-    -- The rest will be in a consistent but uninteresting order.
-    configPackagePriorities :: [String]
-
-    -- | Ignore these packages entirely even if they are exposed, in case they
-    -- export something annoyingly general.
-    , configIgnorePackages :: [String]
-    } deriving (Show)
-
 -- | Map from tails of the each module in the package db to its module name.
 -- So @List@ and @Data.List@ will map to @Data.List@.  Modules from a set
 -- of core packages, like base and containers, will take priority, so even if
 -- there's a package with @Some.Obscure.List@, @List@ will still map to
 -- @Data.List@.
-type Index = Map.Map Types.Qualification Types.ModuleName
+type Index = Map.Map Types.Qualification [(Package, Types.ModuleName)]
+
+-- | Package name without the version.
+type Package = String
 
 empty :: Index
 empty = Map.empty
 
-loadIndex :: Config -> IO Index
+loadIndex :: IO Index
 loadIndex = buildIndex -- TODO load cache?
 
-buildIndex :: Config -> IO Index
-buildIndex config = do
-    result <- parseDump config <$> Process.readProcess "ghc-pkg"
+buildIndex :: IO Index
+buildIndex = do
+    (errors, index) <- parseDump <$> Process.readProcess "ghc-pkg"
         ["field", "*", "name,exposed,exposed-modules"] ""
-    either error return result
+    unless (null errors) $
+        IO.hPutStrLn IO.stderr $ "errors parsing ghc-pkg output: "
+            ++ List.intercalate ", " errors
+    return index
 
-parseDump :: Config -> String -> Either String Index
-parseDump config text = do
-    triples <- sequence (triple sections)
-    return $ Map.fromList $ makePairs (configPackagePriorities config)
-        [(package, mods) | (package, True, mods) <- triples,
-            package `notElem` configIgnorePackages config]
+parseDump :: String -> ([String], Index)
+parseDump text = (errors, index)
     where
-    sections = List.unfoldr parseSection (lines text)
-    triple [] = []
-    triple (("name", [name]) : ("exposed", [exposed])
-            : ("exposed-modules", modules) : rest) =
-        Right (name, exposed == "True", map Types.ModuleName modules)
-            : triple rest
-    triple ((tag, _) : _) = [Left $ "unexpected tag: " ++ tag]
+    index = Map.fromListWith (++)
+        [(qual, [(package, mod)]) | (package, modules) <- packages,
+            mod <- modules, qual <- moduleQualifications mod]
+    (errors, packages) = Either.partitionEithers $
+        extractExposed (parseSections text)
+    extractExposed [] = []
+    extractExposed (("name", [name]) : ("exposed", [exposed])
+            : ("exposed-modules", modules) : rest)
+        | exposed /= "True" = extractExposed rest
+        | otherwise = Right (name, map Types.ModuleName modules)
+            : extractExposed rest
+    extractExposed ((tag, _) : rest) =
+        Left ("unexpected tag: " ++ tag) : extractExposed rest
 
-makePairs :: [String] -> [(String, [Types.ModuleName])]
-    -> [(Types.Qualification, Types.ModuleName)]
-makePairs packagePrio packageMods =
-    [(qual, mod) | (_, mod) <- pairs, qual <- modQuals mod]
-    where
-    pairs = Util.sortOn (priority (reverse packagePrio))
-        [(p, m) | (p, mods) <- packageMods, m <- mods]
-    modQuals = map (Types.Qualification . Util.join ".") . filter (not . null)
-        . List.tails . Util.split "." . Types.moduleName
+-- | Take a module name to all its possible qualifications, i.e. its list
+-- of suffixes.
+moduleQualifications :: Types.ModuleName -> [Types.Qualification]
+moduleQualifications = map (Types.Qualification . Util.join ".")
+    . filter (not . null) . List.tails . Util.split "." . Types.moduleName
 
--- | Put the high priority packages last, so they will override the others
--- in @Map.fromList@.
-priority :: [String] -> (String, Types.ModuleName) -> (Int, Int, String)
-priority packagePrio (package, mod) = (pprio, mprio, package)
-    where
-    pprio = maybe 0 (+1) (List.elemIndex package packagePrio)
-    mprio = negate $ length $ filter (=='.') $ Types.moduleName mod
+parseSections :: String -> [(String, [String])] -- ^ [(section_name, words)]
+parseSections = List.unfoldr parseSection . lines
 
 parseSection :: [String] -> Maybe ((String, [String]), [String])
 parseSection [] = Nothing

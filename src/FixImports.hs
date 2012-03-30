@@ -38,8 +38,10 @@
 module FixImports where
 import Prelude hiding (mod)
 import Control.Applicative ((<$>))
+import qualified Control.Arrow as Arrow
 import qualified Control.Exception as Exception
-import qualified Control.Monad as Monad
+import Control.Monad
+
 import qualified Data.Char as Char
 import qualified Data.Either as Either
 import qualified Data.Generics.Uniplate.Data as Uniplate
@@ -73,7 +75,8 @@ runMain config = do
     (modulePath, (verbose, includes)) <-
         parseArgs =<< System.Environment.getArgs
     text <- IO.getContents
-    fixed <- fixModule includes config modulePath text
+    fixed <- fixModule (config { Config.configIncludes = includes })
+            modulePath text
         `Exception.catch` (\(exc :: Exception.SomeException) ->
             return $ Left $ "exception: " ++ show exc)
     case fixed of
@@ -83,7 +86,7 @@ runMain config = do
             System.Exit.exitFailure
         Right (Result text added removed) -> do
             IO.putStr text
-            Monad.when (verbose
+            when (verbose
                     && (not (Set.null added) || not (Set.null removed))) $
                 IO.hPutStrLn IO.stderr $ "added: " ++ names added
                     ++ "; removed: " ++ names removed
@@ -124,15 +127,15 @@ data Result = Result {
     , resultRemoved :: Set.Set Types.ModuleName
     } deriving (Show)
 
-fixModule :: [FilePath] -> Config.Config -> FilePath -> String
+fixModule :: Config.Config -> FilePath -> String
     -> IO (Either String Result)
-fixModule includes config modulePath text = do
+fixModule config modulePath text = do
     processed <- cppModule modulePath text
     case parse processed of
         Haskell.ParseFailed srcloc err ->
             return $ Left $ Haskell.prettyPrint srcloc ++ ": " ++ err
         Haskell.ParseOk (mod, cmts) ->
-            fixImports includes config modulePath mod cmts text
+            fixImports config modulePath mod cmts text
     where
     parse = Haskell.parseFileContentsWithComments $
         Haskell.defaultParseMode
@@ -167,18 +170,16 @@ cppModule filename s = Cpphs.runCpphs options filename s
 -- | Take a parsed module along with its unparsed text.  Generate a new import
 -- block with proper spacing, formatting, and comments.  Then snip out the
 -- import block on the import file, and replace it.
-fixImports :: [FilePath] -> Config.Config -> FilePath -> Types.Module
+fixImports :: Config.Config -> FilePath -> Types.Module
     -> [Haskell.Comment] -> String -> IO (Either String Result)
-fixImports includes config modulePath mod cmts text = do
+fixImports config modulePath mod cmts text = do
     -- Don't bother loading the index if I'm not going to use it.
     -- TODO actually, only load it if I don't find local imports
     -- I guess Data.Binary's laziness will serve me there
-    index <- if Set.null newImports
-        then return Index.empty
-        else Index.loadIndex (Config.configIndex config)
-    mbNew <- mapM (mkImportLine includes modulePath index)
+    index <- if Set.null newImports then return Index.empty else Index.loadIndex
+    mbNew <- mapM (mkImportLine config modulePath index)
         (Set.toList newImports)
-    mbExisting <- mapM (findImport includes) imports
+    mbExisting <- mapM (findImport (Config.configIncludes config)) imports
     let existing = map (Types.importDeclModule . fst) imports
     let (notFound, importLines) = Either.partitionEithers $
             zipWith mkError
@@ -211,10 +212,10 @@ substituteImports imports (start, end) text =
 -- * find new imports
 
 -- | Make a new ImportLine from a ModuleName.
-mkImportLine :: [FilePath] -> FilePath -> Index.Index -> Types.Qualification
+mkImportLine :: Config.Config -> FilePath -> Index.Index -> Types.Qualification
     -> IO (Maybe Types.ImportLine)
-mkImportLine includes modulePath index qual@(Types.Qualification name) = do
-    found <- findModule includes index modulePath qual
+mkImportLine config modulePath index qual@(Types.Qualification name) = do
+    found <- findModule config index modulePath qual
     return $ case found of
         Nothing -> Nothing
         Just (mod, local) -> Just (Types.ImportLine (mkImport mod) [] local)
@@ -229,51 +230,43 @@ mkImportLine includes modulePath index qual@(Types.Qualification name) = do
 
 -- | Find the qualification and its ModuleName and True if it was a local
 -- import.  Nothing if it wasn't found at all.
-findModule :: [FilePath] -> Index.Index -> FilePath -> Types.Qualification
-    -> IO (Maybe (Types.ModuleName, Bool))
-findModule includes index modulePath qual = do
-    found <- findLocalModule includes modulePath qual
-    return $ case found of
-        Just path -> Just (pathToModule path, True)
-        Nothing -> case Map.lookup qual index of
-            Just mod -> Just (mod, False)
-            Nothing -> Nothing
+findModule :: Config.Config -> Index.Index -> FilePath
+    -- ^ Path to the module being fixed.
+    -> Types.Qualification -> IO (Maybe (Types.ModuleName, Bool))
+findModule config index modulePath qual = do
+    found <- findLocalModules (Config.configIncludes config) qual
+    let local = [(Nothing, Types.pathToModule fn) | fn <- found]
+        package = map (Arrow.first Just) $ Map.findWithDefault [] qual index
+    -- clunky
+    return $ case Config.configPickModule config modulePath (local++package) of
+        Just (package, mod) -> Just (mod, package == Nothing)
+        Nothing -> Nothing
 
--- | Given A.B, look for A/B.hs, */A/B.hs, */*/A/B.hs, etc.  Look in the
--- directory of the current module first.
-findLocalModule :: [FilePath] -> FilePath -> Types.Qualification
-    -> IO (Maybe String)
-findLocalModule includes modulePath (Types.Qualification name) =
-    Util.untilJust $
-        findFile path 0 moduleDir : map (findFileStrip path 4) includes
-    where
-    path = moduleToPath (Types.ModuleName name)
-    moduleDir = FilePath.takeDirectory modulePath
+-- | Given A.B, look for A/B.hs, */A/B.hs, */*/A/B.hs, etc. in each of the
+-- include paths.
+findLocalModules :: [FilePath] -> Types.Qualification -> IO [FilePath]
+findLocalModules includes (Types.Qualification name) = do
+    concat <$> forM includes (\dir -> map (stripDir dir) <$>
+        findFiles 4 (Types.moduleToPath (Types.ModuleName name)) dir)
 
--- | Like 'findFile', but strip the base directory name from the front of the
--- returned file.
-findFileStrip :: FilePath -> Int -> FilePath -> IO (Maybe FilePath)
-findFileStrip file depth dir = do
-    fmap (dropWhile (=='/') . strip dir) <$> findFile file depth dir
-    where
-    strip xs ys
-        | take (length xs) ys == xs = drop (length xs) ys
-        | otherwise = ys
+stripDir :: FilePath -> FilePath -> FilePath
+stripDir dir path
+    | dir == "." = path
+    | otherwise = dropWhile (=='/') $ drop (length dir) path
 
--- | Find the file somewhere below the given directory, giving up after
--- descending the given depth.
-findFile :: FilePath -> Int -> FilePath -> IO (Maybe FilePath)
-findFile file depth dir = fmap (fmap FilePath.normalise) $
-    Util.ifM (Directory.doesFileExist current) (return (Just current)) $
-        if depth <= 0 then return Nothing else descend
+findFiles :: Int -- ^ Descend into subdirectories this many times.
+    -> FilePath -- ^ Find files with this suffix.  Can contain slashes.
+    -> FilePath -- ^ Start from this directory.  Return [] if it doesn't exist.
+    -> IO [FilePath]
+findFiles depth file dir = do
+    fns <- Maybe.fromMaybe [] <$> Util.catchENOENT (Util.listDir dir)
+    (subdirs, fns) <- Util.partitionM Directory.doesDirectoryExist fns
+    subfns <- if depth > 0
+        then concat <$> mapM (findFiles (depth-1) file)
+            (filter isModuleDir subdirs)
+        else return []
+    return $ filter (file `List.isSuffixOf`) fns ++ subfns
     where
-    descend = do
-        subdirs <- Util.ifM (Directory.doesDirectoryExist dir)
-            (Monad.filterM Directory.doesDirectoryExist =<< Util.listDir dir)
-            (return [])
-        Util.untilJust $
-            map (findFile file (depth-1)) (filter isModuleDir subdirs)
-    current = dir </> file
     isModuleDir = all Char.isUpper . take 1 . FilePath.takeFileName
 
 
@@ -299,7 +292,7 @@ findModuleName includes mod =
 
 isLocalModule :: Types.ModuleName -> [FilePath] -> IO Bool
 isLocalModule mod =
-    Util.anyM (Directory.doesFileExist . (</> moduleToPath mod))
+    Util.anyM (Directory.doesFileExist . (</> Types.moduleToPath mod))
 
 isPackageModule :: Types.ModuleName -> IO Bool
 isPackageModule (Types.ModuleName name) = do
@@ -308,14 +301,6 @@ isPackageModule (Types.ModuleName name) = do
     return $ not (null output)
 
 -- * util
-
-pathToModule :: FilePath -> Types.ModuleName
-pathToModule = Types.ModuleName .
-    map (\c -> if c == '/' then '.' else c) . FilePath.dropExtension
-
-moduleToPath :: Types.ModuleName -> FilePath
-moduleToPath (Types.ModuleName name) =
-    map (\c -> if c == '.' then '/' else c) name ++ ".hs"
 
 importInfo :: Types.Module -> [Haskell.Comment]
     -> (Set.Set Types.Qualification, Set.Set Types.ModuleName,

@@ -1,0 +1,8 @@
+-- | Should import Data.Text and not GHC.Something.Something
+-- Should chose local Char over M.Char and Data.Char.
+module Main where
+import qualified Data.Text as Text
+
+import qualified Char
+
+x = Text.pack Char.toUpper

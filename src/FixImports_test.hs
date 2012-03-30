@@ -3,14 +3,18 @@
 module FixImports_test where
 import qualified Language.Haskell.Exts.Annotated as Haskell
 
+import qualified Config
 import qualified FixImports
+import qualified Index
 import qualified Types
 
 
+importRange :: String -> Either String (Int, Int)
 importRange modText = do
     (mod, cmts) <- parse modText
     return $ FixImports.importRange mod
 
+cmtsInRange :: String -> Either String [Haskell.Comment]
 cmtsInRange modText = do
     (mod, cmts) <- parse modText
     return $ FixImports.filterImportCmts (FixImports.importRange mod) cmts
@@ -21,6 +25,12 @@ parse text = case Haskell.parseFileContentsWithComments mode text of
         Left $ Haskell.prettyPrint srcloc ++ ": " ++ err
     Haskell.ParseOk (mod, comments) -> Right (mod, comments)
     where mode = Haskell.defaultParseMode
+
+findModule :: [FilePath] -> FilePath -> String
+    -> IO (Maybe (Types.ModuleName, Bool))
+findModule includes modulePath qual = do
+    index <- Index.loadIndex (Config.configIndex (Config.defaultConfig []))
+    FixImports.findModule includes index modulePath (Types.Qualification qual)
 
 -- TODO quasi-quoting has a nicer way for multi-line strings, right?
 tmod0 = "-- cmt1\n\
