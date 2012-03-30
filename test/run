@@ -22,7 +22,6 @@ function test() {
     diff $tmp expected
     local failed=$?
     if [[ $failed != 0 ]]; then
-        echo '==== FAILED'
         echo '==== expected:'
         cat expected
         echo '==== got:'
@@ -35,6 +34,7 @@ function test() {
 failed=0
 for test in ${=tests}; do
     if ! test $test; then
+        echo $test FAILED
         failed=1
         break
     else
