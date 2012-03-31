@@ -1,5 +1,5 @@
 name: fix-imports
-version: 0.1.3
+version: 1.0.0
 cabal-version: >= 1.6
 build-type: Simple
 synopsis: Program to manage the imports of a haskell module
@@ -17,7 +17,7 @@ license: BSD3
 license-file: LICENSE
 author: Evan Laforge
 maintainer: Evan Laforge <qdunkan@gmail.com>
-stability: experimental
+stability: stable
 tested-with: GHC>=7.0.3
 data-files: README, vimrc
 extra-source-files: src/*.hs
