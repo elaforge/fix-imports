@@ -8,7 +8,7 @@ Derive.Call.Note, Internal gets Cmd.Internal, not Derive.Deriver.Internal
 
 * Index should use Text instead of String
 
-- IO should be System.IO, not Data.Text.Lazy.IO
+* IO should be System.IO, not Data.Text.Lazy.IO
   And Process should be System.Process, not System.Posix.Process
 
 - If the choice is still ambiguous I could ask interactively.

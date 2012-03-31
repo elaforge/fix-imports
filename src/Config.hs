@@ -46,7 +46,8 @@ newtype ImportOrder = ImportOrder [Types.ModuleName]
 
 defaultPriorities :: Priorities
 defaultPriorities = Priorities
-    ([], []) (map Types.ModuleName ["Data"], map Types.ModuleName ["GHC"])
+    ([], ["haskell98"])
+    (map Types.ModuleName [], map Types.ModuleName ["GHC"])
 
 -- * pick candidates
 
@@ -60,17 +61,17 @@ pickModule prios modulePath candidates =
     Util.head $ Util.sortOn (uncurry (prioritize prios modulePath)) candidates
 
 prioritize :: Priorities -> FilePath -> Maybe String -> Types.ModuleName
-    -> ((Int, Int), Int)
+    -> ((Int, Int), (Int, Int))
 prioritize prios modulePath mbPackage mod =
     (packagePrio (prioPackage prios) mbPackage,
-        modulePrio (prioModule prios) mod)
+        (modulePrio (prioModule prios) mod, dots mod))
     where
     packagePrio _ Nothing = (localPrio modulePath mod, 0)
     packagePrio (high, low) (Just pack) = (1, searchPrio high low pack)
     modulePrio (high, low) =
         searchPrio (map Types.moduleName high) (map Types.moduleName low)
         . Types.moduleName
-    -- dots = length . filter (=='.') . Types.moduleName
+    dots = length . filter (=='.') . Types.moduleName
 
 -- | Lower numbers for modules that share more prefix with the module's path.
 -- A/B/Z.hs vs A.B.C -> -2
