@@ -1,8 +1,8 @@
-" Example vimrc file to bind a key to FixImports.
+" Example vimrc file to bind a key to fix-imports.
 
 nm <silent> ,a :call FixImports()<cr>
 
-" Run the contents of the current buffer through the FixImports cmd.  Print
+" Run the contents of the current buffer through the fix-imports cmd.  Print
 " any stderr output on the status line.
 " Remove 'a' from cpoptions if you don't want this to mess up #.
 function FixImports()
@@ -12,7 +12,7 @@ function FixImports()
     " Using a tmp file means I don't have to save the buffer, which the user
     " didn't ask for.
     execute 'write' tmp
-    execute 'silent !FixImports -v' expand('%') '<' tmp '>' out '2>' err
+    execute 'silent !fix-imports -v' expand('%') '<' tmp '>' out '2>' err
     let errs = readfile(err)
     if v:shell_error == 0
         " Don't replace the buffer if there's no change, this way I won't

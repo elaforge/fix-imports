@@ -108,16 +108,17 @@ options =
     ]
 
 usage :: String -> IO a
-usage msg =
-    putStr (GetOpt.usageInfo (msg ++ help) options) >> System.Exit.exitFailure
-    where
-    help = "FixImports Module.hs <Module.hs"
+usage msg = do
+    name <- System.Environment.getProgName
+    putStr $ GetOpt.usageInfo (msg ++ "\n" ++ name ++ " Module.hs <Module.hs")
+        options
+    System.Exit.exitFailure
 
 parseArgs :: [String] -> IO (String, (Bool, [FilePath]))
 parseArgs args = case GetOpt.getOpt GetOpt.Permute options args of
     (flags, [modulePath], []) -> return (modulePath, parse flags)
     (_, [], errs) -> usage $ concat errs
-    _ -> usage "too many args\n"
+    _ -> usage "too many args"
     where parse flags = (Verbose `elem` flags, "." : [p | Include p <- flags])
     -- Includes always have the current directory first.
 

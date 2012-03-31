@@ -26,7 +26,7 @@ source-repository head
     type: darcs
     location: http://ofb.net/~elaforge/darcs/fix-imports/
 
-executable FixImports
+executable fix-imports
     main-is: Main.hs
     hs-source-dirs: src
     build-depends: base >= 3 && < 5, containers, directory, filepath, process,
