@@ -6,7 +6,10 @@ or Util.PPrint before App.PPrint
 * Should search in subdirs of current top level module name?  E.g., in
 Derive.Call.Note, Internal gets Cmd.Internal, not Derive.Deriver.Internal
 
-- Index should use Text instead of String
+* Index should use Text instead of String
+
+- IO should be System.IO, not Data.Text.Lazy.IO
+  And Process should be System.Process, not System.Posix.Process
 
 - If the choice is still ambiguous I could ask interactively.
 

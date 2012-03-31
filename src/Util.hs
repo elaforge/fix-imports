@@ -1,14 +1,22 @@
 module Util where
 import Prelude hiding (head)
-import Control.Monad
+import qualified Control.Concurrent as Concurrent
+import qualified Control.Concurrent.MVar as MVar
 import qualified Control.Exception as Exception
+import Control.Monad
+
 import qualified Data.Function as Function
 import qualified Data.List as List
 import qualified Data.List.Split as Split
+import qualified Data.Text as T
+import qualified Data.Text.IO as Text.IO
 
 import qualified System.Directory as Directory
+import qualified System.Exit as Exit
 import System.FilePath ((</>))
+import qualified System.IO as IO
 import qualified System.IO.Error as IO.Error
+import qualified System.Process as Process
 
 
 -- * list
@@ -59,3 +67,27 @@ listDir :: FilePath -> IO [FilePath]
 listDir dir = fmap (map add . filter (not . (`elem` [".", ".."])))
         (Directory.getDirectoryContents dir)
     where add = if dir == "." then id else (dir </>)
+
+-- | Similar to System.Process.readProcessWithExitCode but return Text instead
+-- of String.
+readProcessWithExitCode :: FilePath -> [String]
+    -> IO (Exit.ExitCode, T.Text, T.Text)
+readProcessWithExitCode cmd args = do
+    (_, Just outh, Just errh, pid) <-
+        Process.createProcess (Process.proc cmd args)
+            { Process.std_out = Process.CreatePipe
+            , Process.std_err = Process.CreatePipe
+            }
+    outMVar <- MVar.newEmptyMVar
+    errMVar <- MVar.newEmptyMVar
+    void $ Concurrent.forkIO $
+        MVar.putMVar outMVar =<< Text.IO.hGetContents outh
+    void $ Concurrent.forkIO $
+        MVar.putMVar errMVar =<< Text.IO.hGetContents errh
+    out <- MVar.takeMVar outMVar
+    err <- MVar.takeMVar errMVar
+    IO.hClose outh
+    IO.hClose errh
+    ex <- Process.waitForProcess pid
+    return (ex, out, err)
+
