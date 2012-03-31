@@ -1,5 +1,21 @@
+-- The syntax is the same as the ghc-pkg output: word, colon, and a list
+-- of words.  A line with leading space is a continuation of the previous
+-- line.  Comments are written with "--".
+
+-- Control the sorting of the import list by prefix.
 import-order: Util Midi Ui Cmd Derive Perform Instrument Local LogView App
+
+-- When there are multiple candidates for a module, pick ones from a
+-- particular package first, or last.
 prio-package-high:
-prio-package-low:
-prio-module-high: Ui Data
+-- haskell98 and ghc export a lot of toplevel modules that most programs
+-- don't want to import.
+prio-package-low: ghc haskell98
+
+-- ... or pick a particular module name prefix first, or last.
+prio-module-high: Ui
 prio-module-low: GHC
+
+-- Otherwise, the module with the least number of dots is picked.  Usually
+-- packages put the most "public" modules at the top, e.g. IO should choose
+-- System.IO, not Data.Text.Lazy.IO

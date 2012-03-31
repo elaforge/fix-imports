@@ -70,7 +70,10 @@ moduleQualifications = map (Types.Qualification . Util.join ".")
     . filter (not . null) . List.tails . Util.split "." . Types.moduleName
 
 parseSections :: Text -> [(Text, [Text])] -- ^ [(section_name, words)]
-parseSections = List.unfoldr parseSection . T.lines
+parseSections = List.unfoldr parseSection . stripComments . T.lines
+
+stripComments :: [Text] -> [Text]
+stripComments = filter (not . T.null) . map (T.stripEnd . fst . T.breakOn "--")
 
 parseSection :: [Text] -> Maybe ((Text, [Text]), [Text])
 parseSection [] = Nothing
