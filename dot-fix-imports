@@ -10,7 +10,7 @@ import-order: Util Midi Ui Cmd Derive Perform Instrument Local LogView App
 prio-package-high:
 -- haskell98 and ghc export a lot of toplevel modules that most programs
 -- don't want to import.
-prio-package-low: ghc haskell98
+prio-package-low: haskell98 ghc Cabal
 
 -- ... or pick a particular module name prefix first, or last.
 prio-module-high: Ui

@@ -46,14 +46,20 @@ newtype ImportOrder = ImportOrder [Types.ModuleName]
 
 defaultPriorities :: Priorities
 defaultPriorities = Priorities
-    ([], ["haskell98", "ghc"])
+    -- Make some common packages low priority so their exports don't get
+    -- chosen over what you probably wanted:
+    -- haskell98 has obsolete toplevel module names.
+    -- ghc exports tons of toplevel modules that you probably don't want.
+    -- Cabal is probably mostly used in Setup.hs and exports Distribution.Text.
+    ([], ["haskell98", "ghc", "Cabal"])
     (map Types.ModuleName [], map Types.ModuleName ["GHC"])
 
 -- * pick candidates
 
 -- | Prefer local modules that share prefix with the module path, then prefer
 -- local modules to ones from packages, then prefer modules from the packages
--- in packagePriority.
+-- in packagePriority.  If all else is equal alphabetize so at least the
+-- order is predictable.
 pickModule :: Priorities -> FilePath
     -> [(Maybe Index.Package, Types.ModuleName)]
     -> Maybe (Maybe Index.Package, Types.ModuleName)
@@ -63,10 +69,12 @@ pickModule prios modulePath candidates =
         filter ((/= Types.pathToModule modulePath) . snd) candidates
 
 prioritize :: Priorities -> FilePath -> Maybe String -> Types.ModuleName
-    -> ((Int, Int), (Int, Int))
+    -> ((Int, Int), (Int, Int), String)
 prioritize prios modulePath mbPackage mod =
-    (packagePrio (prioPackage prios) mbPackage,
-        (modulePrio (prioModule prios) mod, dots mod))
+    ( packagePrio (prioPackage prios) mbPackage
+    , (modulePrio (prioModule prios) mod, dots mod)
+    , Types.moduleName mod
+    )
     where
     packagePrio _ Nothing = (localPrio modulePath mod, 0)
     packagePrio (high, low) (Just pack) = (1, searchPrio high low pack)
