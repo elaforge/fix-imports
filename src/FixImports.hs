@@ -178,8 +178,7 @@ fixImports config modulePath mod cmts text = do
     -- TODO actually, only load it if I don't find local imports
     -- I guess Data.Binary's laziness will serve me there
     index <- if Set.null newImports then return Index.empty else Index.loadIndex
-    mbNew <- mapM (mkImportLine config modulePath index)
-        (Set.toList newImports)
+    mbNew <- mapM (mkImportLine config modulePath index) (Set.toList newImports)
     mbExisting <- mapM (findImport (Config.configIncludes config)) imports
     let existing = map (Types.importDeclModule . fst) imports
     let (notFound, importLines) = Either.partitionEithers $
@@ -311,14 +310,13 @@ importInfo mod cmts = (missing, redundantModules, declCmts, range)
     where
     redundant = Set.difference imported used
     missing = Set.difference used imported
-    imported = Set.fromList (Maybe.catMaybes quals)
+    imported = Set.fromList quals
 
     -- Get from the qualified import name back to the actual module name so
     -- I can return that.
     modules = map Types.importDeclModule imports
     quals = map Types.importDeclQualification imports
-    qualToModule =
-        Map.fromList [(qual, mod) | (Just qual, mod) <- zip quals modules]
+    qualToModule = Map.fromList (zip quals modules)
     redundantModules = Set.fromList $ Maybe.catMaybes
         [Map.lookup qual qualToModule | qual <- Set.toList redundant]
 
@@ -330,7 +328,7 @@ importInfo mod cmts = (missing, redundantModules, declCmts, range)
         , keepImport decl
         ]
     -- Keep unqualified imports, but only keep qualified ones if they are used.
-    keepImport = maybe True (`Set.member` used) . Types.importDeclQualification
+    keepImport = (`Set.member` used) . Types.importDeclQualification
     range = importRange mod
 
 filterImportCmts :: (Int, Int) -> [Haskell.Comment] -> [Haskell.Comment]

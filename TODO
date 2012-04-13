@@ -1,4 +1,4 @@
-- Doesn't understand that 'import X as Y' is the same as
+* Doesn't understand that 'import X as Y' is the same as
 'import qualified X as Y'
 
 - If I set Util.Map in prio-module-low or Data.Map in prio-module-high, why

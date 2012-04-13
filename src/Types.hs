@@ -35,14 +35,10 @@ moduleToPath :: ModuleName -> FilePath
 moduleToPath (ModuleName name) =
     map (\c -> if c == '.' then '/' else c) name ++ ".hs"
 
-
--- | Get the qualified name from a qualified import, if it is a qualified
--- import.
-importDeclQualification :: ImportDecl -> Maybe Qualification
-importDeclQualification decl
-    | Haskell.importQualified decl = Just $ moduleToQualification $
-        maybe (Haskell.importModule decl) id (Haskell.importAs decl)
-    | otherwise = Nothing
+-- | Get the qualified name from an import.
+importDeclQualification :: ImportDecl -> Qualification
+importDeclQualification decl = moduleToQualification $
+    maybe (Haskell.importModule decl) id (Haskell.importAs decl)
 
 -- | Extract the ModuleName from an ImportDecl.
 importDeclModule :: ImportDecl -> ModuleName
