@@ -1,8 +1,13 @@
+* done
+- not done
+
 * Doesn't understand that 'import X as Y' is the same as
 'import qualified X as Y'
 
 - If I set Util.Map in prio-module-low or Data.Map in prio-module-high, why
-does Util.Map still get imported?
+does Util.Map still get imported?  It's because local modules are always
+prioritized above package ones.  To fix this I could have a ad-hoc map of e.g.
+'Map -> Data.Map' to manually set certain resolutions.
 
 * Bug: never import the current module
 
