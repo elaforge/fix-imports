@@ -58,7 +58,9 @@ pickModule :: Priorities -> FilePath
     -> [(Maybe Index.Package, Types.ModuleName)]
     -> Maybe (Maybe Index.Package, Types.ModuleName)
 pickModule prios modulePath candidates =
-    Util.head $ Util.sortOn (uncurry (prioritize prios modulePath)) candidates
+    Util.head $ Util.sortOn (uncurry (prioritize prios modulePath)) $
+        -- Don't pick myself!
+        filter ((/= Types.pathToModule modulePath) . snd) candidates
 
 prioritize :: Priorities -> FilePath -> Maybe String -> Types.ModuleName
     -> ((Int, Int), (Int, Int))

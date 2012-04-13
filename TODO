@@ -1,3 +1,16 @@
+- Doesn't understand that 'import X as Y' is the same as
+'import qualified X as Y'
+
+- If I set Util.Map in prio-module-low or Data.Map in prio-module-high, why
+does Util.Map still get imported?
+
+* Bug: never import the current module
+
+- Bug: Track imported Cmd.Lang.LTrack, should match entire component, not
+just prefix.
+
+- Exception should be Control.Exception, not Exception
+
 * Read per-project priorities so e.g. it looks for Data.Map before Util.Map
 or Util.PPrint before App.PPrint
 
