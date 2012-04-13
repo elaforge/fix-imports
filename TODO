@@ -6,7 +6,7 @@ does Util.Map still get imported?
 
 * Bug: never import the current module
 
-- Bug: Track imported Cmd.Lang.LTrack, should match entire component, not
+* Bug: Track imported Cmd.Lang.LTrack, should match entire component, not
 just prefix.
 
 - Exception should be Control.Exception, not Exception

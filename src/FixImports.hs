@@ -266,7 +266,7 @@ findFiles depth file dir = do
         then concat <$> mapM (findFiles (depth-1) file)
             (filter isModuleDir subdirs)
         else return []
-    return $ filter (file `List.isSuffixOf`) fns ++ subfns
+    return $ filter ((==file) . FilePath.takeFileName) fns ++ subfns
     where
     isModuleDir = all Char.isUpper . take 1 . FilePath.takeFileName
 
