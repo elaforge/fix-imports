@@ -305,10 +305,11 @@ isPackageModule (Types.ModuleName name) = do
 importInfo :: Types.Module -> [Haskell.Comment]
     -> (Set.Set Types.Qualification, Set.Set Types.ModuleName,
         [(Types.ImportDecl, [Types.Comment])], (Int, Int))
-    -- ^ (newModules, unusedModules, moduleToImport, rangeOfImportBlock).
-importInfo mod cmts = (missing, redundantModules, declCmts, range)
+    -- ^ (missingImports, removedModules, moduleToImport, rangeOfImportBlock).
+importInfo mod cmts = (missing, removed, declCmts, range)
     where
-    redundant = Set.difference imported used
+    removed = Set.difference (Set.fromList modules)
+        (Set.fromList (map (Types.importDeclModule . fst) declCmts))
     missing = Set.difference used imported
     imported = Set.fromList quals
 
@@ -316,10 +317,6 @@ importInfo mod cmts = (missing, redundantModules, declCmts, range)
     -- I can return that.
     modules = map Types.importDeclModule imports
     quals = map Types.importDeclQualification imports
-    qualToModule = Map.fromList (zip quals modules)
-    redundantModules = Set.fromList $ Maybe.catMaybes
-        [Map.lookup qual qualToModule | qual <- Set.toList redundant]
-
     used = Set.fromList (moduleQNames mod)
     imports = moduleImportDecls mod
     declCmts =
@@ -328,7 +325,8 @@ importInfo mod cmts = (missing, redundantModules, declCmts, range)
         , keepImport decl
         ]
     -- Keep unqualified imports, but only keep qualified ones if they are used.
-    keepImport = (`Set.member` used) . Types.importDeclQualification
+    keepImport decl = Set.member (Types.importDeclQualification decl) used
+        || not (Haskell.importQualified decl)
     range = importRange mod
 
 filterImportCmts :: (Int, Int) -> [Haskell.Comment] -> [Haskell.Comment]
