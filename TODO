@@ -9,7 +9,7 @@ does Util.Map still get imported?
 * Bug: Track imported Cmd.Lang.LTrack, should match entire component, not
 just prefix.
 
-- Exception should be Control.Exception, not Exception
+* Exception should be Control.Exception, not Exception
 
 * Read per-project priorities so e.g. it looks for Data.Map before Util.Map
 or Util.PPrint before App.PPrint

@@ -46,7 +46,7 @@ newtype ImportOrder = ImportOrder [Types.ModuleName]
 
 defaultPriorities :: Priorities
 defaultPriorities = Priorities
-    ([], ["haskell98"])
+    ([], ["haskell98", "ghc"])
     (map Types.ModuleName [], map Types.ModuleName ["GHC"])
 
 -- * pick candidates
