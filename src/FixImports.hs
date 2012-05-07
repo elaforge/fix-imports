@@ -51,7 +51,9 @@ import qualified Data.Maybe as Maybe
 import qualified Data.Set as Set
 
 import qualified Language.Haskell.Exts.Annotated as Haskell
+import qualified Language.Haskell.Exts.Extension as Extension
 import qualified Language.Preprocessor.Cpphs as Cpphs
+
 import qualified System.Console.GetOpt as GetOpt
 import qualified System.Directory as Directory
 import qualified System.Environment
@@ -141,6 +143,7 @@ fixModule config modulePath text = do
     parse = Haskell.parseFileContentsWithComments $
         Haskell.defaultParseMode
             { Haskell.parseFilename = modulePath
+            , Haskell.extensions = Extension.haskell2010
             -- The meaning of Nothing is undocumented, but I think it means
             -- to not check for fixity ambiguity at all, which is what I want.
             , Haskell.fixities = Nothing
