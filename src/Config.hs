@@ -15,7 +15,7 @@ import qualified Util
 
 data Config = Config {
     -- | Additional directories to search for local modules.  Taken from the
-    -- -i flag.
+    -- -i flag and 'include' config line.
     configIncludes :: [FilePath]
     -- | Format the import block.
     , configShowImports :: [Types.ImportLine] -> String
@@ -25,9 +25,9 @@ data Config = Config {
         -> Maybe (Maybe Index.Package, Types.ModuleName)
     }
 
-config :: ImportOrder -> Priorities -> Config
-config order prios = Config
-    { configIncludes = []
+config :: [FilePath] -> ImportOrder -> Priorities -> Config
+config include order prios = Config
+    { configIncludes = include
     , configShowImports = formatGroups order
     , configPickModule = pickModule prios
     }

@@ -20,21 +20,26 @@ import qualified Util
 
 main :: IO ()
 main = do
-    let deflt = (Config.ImportOrder [], Config.defaultPriorities, [])
-    (order, prios, warns) <- fmap (maybe deflt parse) $
+    let deflt = ([], Config.ImportOrder [], Config.defaultPriorities, [])
+    (include, order, prios, warns) <- fmap (maybe deflt parse) $
         Util.catchENOENT $ Text.IO.readFile ".fix-imports"
     unless (null warns) $
         IO.hPutStrLn IO.stderr $
             "warnings unrecognized fields in .fix-imports: "
             ++ List.intercalate ", " warns
-    FixImports.runMain (Config.config order prios)
+    FixImports.runMain (Config.config include order prios)
 
-parse :: Text.Text -> (Config.ImportOrder, Config.Priorities, [String])
-parse text = (order, prios, extra)
+parse :: Text.Text
+    -> ([FilePath], Config.ImportOrder, Config.Priorities, [String])
+parse text = (include, order, prios, extra)
     where
     extra = Map.keys config List.\\ valid
-    valid = ["import-order", "prio-package-high", "prio-package-low",
-        "prio-module-high", "prio-module-low"]
+    valid =
+        [ "include", "import-order"
+        , "prio-package-high", "prio-package-low"
+        , "prio-module-high", "prio-module-low"
+        ]
+    include = get "include"
     order = Config.ImportOrder (getModules "import-order")
     prios = Config.Priorities (get "prio-package-high", get "prio-package-low")
         (getModules "prio-module-high", getModules "prio-module-low")

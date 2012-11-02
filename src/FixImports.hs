@@ -77,8 +77,9 @@ runMain config = do
     (modulePath, (verbose, includes)) <-
         parseArgs =<< System.Environment.getArgs
     text <- IO.getContents
-    fixed <- fixModule (config { Config.configIncludes = includes })
-            modulePath text
+    config <- return $ config
+        { Config.configIncludes = includes ++ Config.configIncludes config }
+    fixed <- fixModule config modulePath text
         `Exception.catch` (\(exc :: Exception.SomeException) ->
             return $ Left $ "exception: " ++ show exc)
     case fixed of

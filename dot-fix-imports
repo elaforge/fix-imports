@@ -1,6 +1,13 @@
+-- fix-imports looks for a .fix-imports file in the current directory for
+-- per-project configuration.
+--
 -- The syntax is the same as the ghc-pkg output: word, colon, and a list
 -- of words.  A line with leading space is a continuation of the previous
 -- line.  Comments are written with "--".
+
+-- Include extra directories on the search path.  Directories passed via -i
+-- go before this list.
+include: dist/build/my-project/my-project-tmp
 
 -- Control the sorting of the import list by prefix.
 import-order: Util Midi Ui Cmd Derive Perform Instrument Local LogView App
