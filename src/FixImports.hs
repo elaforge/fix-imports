@@ -89,15 +89,14 @@ runMain config = do
             System.Exit.exitFailure
         Right (Result text added removed) -> do
             IO.putStr text
-            when (verbose
-                    && (not (Set.null added) || not (Set.null removed))) $
-                IO.hPutStrLn IO.stderr $ "added: " ++ names added
-                    ++ "; removed: " ++ names removed
+            let names = Util.join ", " . map Types.moduleName . Set.toList
+                (addedMsg, removedMsg) = (names added, names removed)
+            when (verbose && (not (null addedMsg) || not (null removedMsg))) $
+                IO.hPutStrLn IO.stderr $ Util.join "; " $ filter (not . null)
+                    [ if null addedMsg then "" else "added: " ++ addedMsg
+                    , if null removedMsg then "" else "removed: " ++ removedMsg
+                    ]
             System.Exit.exitSuccess
-    where
-    names xs
-        | Set.null xs = "[]"
-        | otherwise = (Util.join ", " . map Types.moduleName . Set.toList) xs
 
 data Flag = Verbose | Include String
     deriving (Eq, Show)
