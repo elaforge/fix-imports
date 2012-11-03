@@ -1,5 +1,5 @@
 name: fix-imports
-version: 1.0.1
+version: 1.0.2
 cabal-version: >= 1.6
 build-type: Simple
 synopsis: Program to manage the imports of a haskell module
@@ -13,6 +13,10 @@ description:
     It's most convenient if bound to an editor key.
     .
     Recent major changes:
+    * version 1.0.2
+    .
+    * Fix bug where a qualified import with >1 dot wasn't found.  And don't
+    mess with Prelude.
     .
     * version 1.0.1
     .
