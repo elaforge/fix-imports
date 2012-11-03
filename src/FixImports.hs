@@ -309,18 +309,20 @@ isPackageModule (Types.ModuleName name) = do
 importInfo :: Types.Module -> [Haskell.Comment]
     -> (Set.Set Types.Qualification, Set.Set Types.ModuleName,
         [(Types.ImportDecl, [Types.Comment])], (Int, Int))
-    -- ^ (missingImports, removedModules, moduleToImport, rangeOfImportBlock).
-importInfo mod cmts = (missing, removed, declCmts, range)
+    -- ^ (missingImports, unusedImports, unchangedImports, rangeOfImportBlock).
+importInfo mod cmts = (missing, unused, declCmts, range)
     where
-    removed = Set.difference (Set.fromList modules)
+    unused = Set.difference (Set.fromList modules)
         (Set.fromList (map (Types.importDeclModule . fst) declCmts))
     missing = Set.difference used imported
-    imported = Set.fromList quals
+    -- If the Prelude isn't explicitly imported, it's implicitly imported, so
+    -- if I see Prelude.x it doesn't mean to add an import.
+    imported = Set.fromList $ prelude : qualifiedImports
 
     -- Get from the qualified import name back to the actual module name so
     -- I can return that.
     modules = map Types.importDeclModule imports
-    quals = map Types.importDeclQualification imports
+    qualifiedImports = map Types.importDeclQualification imports
     used = Set.fromList (moduleQNames mod)
     imports = moduleImportDecls mod
     declCmts =
@@ -329,8 +331,13 @@ importInfo mod cmts = (missing, removed, declCmts, range)
         , keepImport decl
         ]
     -- Keep unqualified imports, but only keep qualified ones if they are used.
-    keepImport decl = Set.member (Types.importDeclQualification decl) used
+    -- Prelude is considered always used if it appears, because removing it
+    -- changes import behavour.
+    keepImport decl =
+        Set.member (Types.importDeclQualification decl)
+            (Set.insert prelude used)
         || not (Haskell.importQualified decl)
+    prelude = Types.Qualification "Prelude"
     range = importRange mod
 
 filterImportCmts :: (Int, Int) -> [Haskell.Comment] -> [Haskell.Comment]
