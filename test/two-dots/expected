@@ -1,0 +1,2 @@
+import qualified A.B.C as B.C
+x = B.C.f

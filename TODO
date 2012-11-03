@@ -4,7 +4,7 @@
 - If I see a Prelude.something, don't import qualified Prelude unless it's
 already there.  Importing turns off the implicit unqualified import.
 
-- Scale.All didn't find Derive.Scale.All like it should have
+* Scale.All didn't find Derive.Scale.All like it should have
 
 - Didn't want to import Ui.Types when I already have Types imported
 unqualified.
