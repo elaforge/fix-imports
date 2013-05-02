@@ -1,0 +1,2 @@
+import qualified Some.Long.Module.Name.Module as Long.Module.Name.Module
+f = Long.Module.Name.Module.q

@@ -156,8 +156,13 @@ showImport (Types.ImportLine imp cmts _) =
     above ++ importLine ++ (if null right then "" else ' ' : right)
     where
     above = concat [cmt ++ "\n" | Types.Comment Types.CmtAbove cmt <- cmts]
-    importLine = Haskell.prettyPrint imp
+    importLine = Haskell.prettyPrintStyleMode style mode imp
     right = Util.join "\n" [cmt | Types.Comment Types.CmtRight cmt <- cmts]
+    style = Haskell.style
+        { Haskell.lineLength = 80
+        , Haskell.ribbonsPerLine = 1
+        }
+    mode = Haskell.defaultMode
 
 {-
 -- t0 = map localPrio imports -- formatGroups priorities (map mkImport imports)
