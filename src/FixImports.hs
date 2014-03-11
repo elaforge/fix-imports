@@ -143,7 +143,12 @@ fixModule config modulePath text = do
     parse = Haskell.parseFileContentsWithComments $
         Haskell.defaultParseMode
             { Haskell.parseFilename = modulePath
-            , Haskell.extensions = Extension.haskell2010
+            , Haskell.extensions = map Extension.EnableExtension $
+                Extension.toExtensionList Extension.Haskell2010 []
+                -- GHC has this extension enabled by default, and it's easy
+                -- to wind up with code that relies on it:
+                -- http://www.haskell.org/ghc/docs/7.6.3/html/users_guide/bugs-and-infelicities.html#infelicities-syntax
+                ++ [Extension.NondecreasingIndentation]
             -- The meaning of Nothing is undocumented, but I think it means
             -- to not check for fixity ambiguity at all, which is what I want.
             , Haskell.fixities = Nothing
