@@ -1,6 +1,10 @@
 * done
 - not done
 
+- Use haskell-names to guess the module to import based on the function name:
+  http://documentup.com/haskell-suite/haskell-names
+  This could even potentially support unqualified imports.
+
 * If I see a Prelude.something, don't import qualified Prelude unless it's
 already there.  Importing turns off the implicit unqualified import.
 

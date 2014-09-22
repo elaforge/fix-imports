@@ -57,6 +57,6 @@ executable fix-imports
     main-is: Main.hs
     hs-source-dirs: src
     build-depends: base >= 3 && < 5, containers, directory, filepath, process
-        , haskell-src-exts >= 1.14.0 && < 1.15
+        , haskell-src-exts >= 1.16.0 && < 1.17
         , uniplate, split, cpphs, text
     ghc-options: -Wall -fno-warn-name-shadowing

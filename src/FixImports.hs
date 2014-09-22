@@ -228,9 +228,16 @@ mkImportLine config modulePath index qual@(Types.Qualification name) = do
         Nothing -> Nothing
         Just (mod, local) -> Just (Types.ImportLine (mkImport mod) [] local)
     where
-    mkImport (Types.ModuleName mod) =
-        Haskell.ImportDecl empty (Haskell.ModuleName empty mod)
-            True False Nothing (importAs mod) Nothing
+    mkImport (Types.ModuleName mod) = Haskell.ImportDecl
+        { Haskell.importAnn = empty
+        , Haskell.importModule = Haskell.ModuleName empty mod
+        , Haskell.importQualified = True
+        , Haskell.importSrc = False
+        , Haskell.importSafe = False
+        , Haskell.importPkg = Nothing
+        , Haskell.importAs = importAs mod
+        , Haskell.importSpecs = Nothing
+        }
     importAs mod
         | name == mod = Nothing
         | otherwise = Just $ Haskell.ModuleName empty name
