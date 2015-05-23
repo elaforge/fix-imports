@@ -8,6 +8,7 @@ import qualified Data.Either as Either
 import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Text as T
+import qualified Data.Maybe as Maybe
 import Data.Text (Text)
 
 import qualified System.IO as IO
@@ -51,17 +52,19 @@ parseDump text = (errors, index)
         [(qual, [(T.unpack package, mod)]) | (package, modules) <- packages,
             mod <- modules, qual <- moduleQualifications mod]
     (errors, packages) = Either.partitionEithers $
-        extractExposed (parseSections text)
-    extractExposed :: [(Text, [Text])]
-        -> [Either String (Text, [Types.ModuleName])]
-    extractExposed [] = []
-    extractExposed (("name", [name]) : ("exposed", [exposed])
-            : ("exposed-modules", modules) : rest)
-        | exposed /= "True" = extractExposed rest
-        | otherwise = Right (name, map (Types.ModuleName . T.unpack) modules)
-            : extractExposed rest
-    extractExposed ((tag, _) : rest) =
-        Left ("unexpected tag: " ++ T.unpack tag) : extractExposed rest
+        extractSections (parseSections text)
+
+extractSections :: [(Text, [Text])]
+    -> [Either String (Text, [Types.ModuleName])]
+extractSections = Maybe.mapMaybe extract . Util.splitWith ((=="name") . fst)
+    where
+    extract [("name", [name]), ("exposed", [exposed]),
+            ("exposed-modules", modules)]
+        | exposed /= "True" = Nothing
+        | otherwise = Just $
+            Right (name, map (Types.ModuleName . T.unpack) modules)
+    -- It may be missing exposed-modules, but that means I don't need it.
+    extract _ = Nothing
 
 -- | Take a module name to all its possible qualifications, i.e. its list
 -- of suffixes.
@@ -82,24 +85,3 @@ parseSection (x:xs) =
     where
     (tag, rest) = T.break (==':') x
     (pre, post) = span (" " `T.isPrefixOf`) xs
-
-{-
--- * test
-
-t0 = makePairs prio $ map (\(p, ms) -> (p, map Types.ModuleName ms))
-    [ ("base", ["Data.List", "Foo.Bar.List"])
-    , ("haskell98", ["List"])
-    , ("containers", ["Box.List"])
-    ]
-    -- Not containers Box.List because containers is lower prio.
-    -- Not haskell98 List because haskell98 is lowest prio, even though that's
-    -- the shortest match.
-    -- Not Foo.Bar.List because Data.List is a shorter match.
-
-t1 = Map.lookup (Types.Qualification "List") (Map.fromList t0)
-t10 = List.unfoldr parseSection ["hi: there fred", "  foo", "next: section"]
-tdump =
-    [ "name: base", "exposed: True", "exposed-modules: Data.List Data.Map"
-    , "name: mtl", "exposed: True", "exposed-modules: Monad.B.List"
-    ]
--}

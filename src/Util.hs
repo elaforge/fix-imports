@@ -29,6 +29,15 @@ join = List.intercalate
 split :: (Eq a) => [a] -> [a] -> [[a]]
 split = Split.splitOn
 
+-- | Split where the function matches.
+splitWith :: (a -> Bool) -> [a] -> [[a]]
+splitWith f xs = map reverse (go f xs [])
+    where
+    go _ [] collect = [collect]
+    go f (x:xs) collect
+        | f x = collect : go f xs [x]
+        | otherwise = go f xs (x:collect)
+
 head :: [a] -> Maybe a
 head [] = Nothing
 head (x:_) = Just x
