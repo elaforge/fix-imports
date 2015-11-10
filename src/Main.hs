@@ -20,30 +20,38 @@ import qualified Util
 
 main :: IO ()
 main = do
-    let deflt = ([], Config.ImportOrder [], Config.defaultPriorities, [])
-    (include, order, prios, warns) <- fmap (maybe deflt parse) $
+    (config, errors) <- fmap (maybe (Config.empty, []) parse) $
         Util.catchENOENT $ Text.IO.readFile ".fix-imports"
-    unless (null warns) $
-        IO.hPutStrLn IO.stderr $
-            "warnings unrecognized fields in .fix-imports: "
-            ++ List.intercalate ", " warns
-    FixImports.runMain (Config.config include order prios)
+    mapM_ (IO.hPutStrLn IO.stderr) errors
+    FixImports.runMain config
 
-parse :: Text.Text
-    -> ([FilePath], Config.ImportOrder, Config.Priorities, [String])
-parse text = (include, order, prios, extra)
+parse :: Text.Text -> (Config.Config, [String])
+parse text = (config, errors)
     where
-    extra = Map.keys config List.\\ valid
+    commas = List.intercalate ", "
+    errors =
+        [ ".fix-imports has unrecognized fields: "
+            ++ commas unknownFields | not (null unknownFields) ]
+        ++ [ ".fix-imports has unknown language extensions: "
+            ++ commas unknownLanguage | not (null unknownLanguage) ]
+    config = Config.empty
+        { Config.configIncludes = get "include"
+        , Config.configLanguage = language
+        , Config.configShowImports = Config.formatGroups order
+        , Config.configPickModule = Config.pickModule prios
+        }
+    (unknownLanguage, language) = Config.parseLanguage (get "language")
+    unknownFields = Map.keys fields List.\\ valid
     valid =
         [ "include", "import-order"
         , "prio-package-high", "prio-package-low"
         , "prio-module-high", "prio-module-low"
+        , "language"
         ]
-    include = get "include"
     order = Config.ImportOrder (getModules "import-order")
     prios = Config.Priorities (get "prio-package-high", get "prio-package-low")
         (getModules "prio-module-high", getModules "prio-module-low")
-    config = Map.fromList [(Text.unpack section, map Text.unpack words)
+    fields = Map.fromList [(Text.unpack section, map Text.unpack words)
         | (section, words) <- Index.parseSections text]
     getModules = map Types.ModuleName . get
-    get k = Map.findWithDefault [] k config
+    get k = Map.findWithDefault [] k fields

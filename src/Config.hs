@@ -4,8 +4,10 @@
 --
 -- TODO dyre does this sort of thing
 module Config where
+import qualified Data.Either as Either
 import qualified Data.List as List
 import qualified Language.Haskell.Exts.Annotated as Haskell
+import qualified Language.Haskell.Exts.Extension as Extension
 import qualified System.FilePath as FilePath
 
 import qualified Index
@@ -17,6 +19,8 @@ data Config = Config {
     -- | Additional directories to search for local modules.  Taken from the
     -- -i flag and 'include' config line.
     configIncludes :: [FilePath]
+    -- | These language extensions are enabled by default.
+    , configLanguage :: [Extension.Extension]
     -- | Format the import block.
     , configShowImports :: [Types.ImportLine] -> String
     -- | Often multiple modules from the package index will match
@@ -25,11 +29,12 @@ data Config = Config {
         -> Maybe (Maybe Index.Package, Types.ModuleName)
     }
 
-config :: [FilePath] -> ImportOrder -> Priorities -> Config
-config include order prios = Config
-    { configIncludes = include
-    , configShowImports = formatGroups order
-    , configPickModule = pickModule prios
+empty :: Config
+empty = Config
+    { configIncludes = []
+    , configLanguage = []
+    , configShowImports = formatGroups $ ImportOrder []
+    , configPickModule = pickModule defaultPriorities
     }
 
 data Priorities = Priorities {
@@ -43,6 +48,12 @@ data Priorities = Priorities {
 newtype ImportOrder = ImportOrder [Types.ModuleName]
     deriving (Show)
 
+parseLanguage :: [String] -> ([String], [Extension.Extension])
+parseLanguage = Either.partitionEithers . map parse
+    where
+    parse w = case Extension.parseExtension w of
+        Extension.UnknownExtension _ -> Left w
+        ext -> Right ext
 
 defaultPriorities :: Priorities
 defaultPriorities = Priorities

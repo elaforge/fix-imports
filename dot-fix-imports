@@ -26,3 +26,6 @@ prio-module-low: GHC
 -- Otherwise, the module with the least number of dots is picked.  Usually
 -- packages put the most "public" modules at the top, e.g. IO should choose
 -- System.IO, not Data.Text.Lazy.IO
+
+-- Space separate list of extensions that are enabled by default.
+language: GeneralizedNewtypeDeriving
