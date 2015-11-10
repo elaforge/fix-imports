@@ -35,10 +35,10 @@ parse text = (config, errors)
         ++ [ ".fix-imports has unknown language extensions: "
             ++ commas unknownLanguage | not (null unknownLanguage) ]
     config = Config.empty
-        { Config.configIncludes = get "include"
-        , Config.configLanguage = language
-        , Config.configShowImports = Config.formatGroups order
-        , Config.configPickModule = Config.pickModule prios
+        { Config.includes = get "include"
+        , Config.language = language
+        , Config.showImports = Config.formatGroups order
+        , Config.pickModule = Config.makePickModule prios
         }
     (unknownLanguage, language) = Config.parseLanguage (get "language")
     unknownFields = Map.keys fields List.\\ valid

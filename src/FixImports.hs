@@ -78,7 +78,7 @@ runMain config = do
         parseArgs =<< System.Environment.getArgs
     text <- IO.getContents
     config <- return $ config
-        { Config.configIncludes = includes ++ Config.configIncludes config }
+        { Config.includes = includes ++ Config.includes config }
     fixed <- fixModule config modulePath text
         `Exception.catch` (\(exc :: Exception.SomeException) ->
             return $ Left $ "exception: " ++ show exc)
@@ -142,7 +142,7 @@ fixModule config modulePath text = do
     where
     parse = Haskell.parseFileContentsWithComments $ Haskell.defaultParseMode
         { Haskell.parseFilename = modulePath
-        , Haskell.extensions = Config.configLanguage config
+        , Haskell.extensions = Config.language config
             ++ defaultExtensions
         -- The meaning of Nothing is undocumented, but I think it means
         -- to not check for fixity ambiguity at all, which is what I want.
@@ -188,7 +188,7 @@ fixImports config modulePath mod cmts text = do
     -- I guess Data.Binary's laziness will serve me there
     index <- if Set.null newImports then return Index.empty else Index.loadIndex
     mbNew <- mapM (mkImportLine config modulePath index) (Set.toList newImports)
-    mbExisting <- mapM (findImport (Config.configIncludes config)) imports
+    mbExisting <- mapM (findImport (Config.includes config)) imports
     let existing = map (Types.importDeclModule . fst) imports
     let (notFound, importLines) = Either.partitionEithers $
             zipWith mkError
@@ -207,7 +207,7 @@ fixImports config modulePath mod cmts text = do
     where
     (newImports, unusedImports, imports, range) = importInfo mod cmts
     toModule (Types.Qualification name) = Types.ModuleName name
-    showImports = Config.configShowImports config
+    showImports = Config.showImports config
 
 -- | Clip out the range from the given text and replace it with the given
 -- lines.
@@ -250,11 +250,11 @@ findModule :: Config.Config -> Index.Index -> FilePath
     -- ^ Path to the module being fixed.
     -> Types.Qualification -> IO (Maybe (Types.ModuleName, Bool))
 findModule config index modulePath qual = do
-    found <- findLocalModules (Config.configIncludes config) qual
+    found <- findLocalModules (Config.includes config) qual
     let local = [(Nothing, Types.pathToModule fn) | fn <- found]
         package = map (Arrow.first Just) $ Map.findWithDefault [] qual index
     -- clunky
-    return $ case Config.configPickModule config modulePath (local++package) of
+    return $ case Config.pickModule config modulePath (local++package) of
         Just (package, mod) -> Just (mod, package == Nothing)
         Nothing -> Nothing
 

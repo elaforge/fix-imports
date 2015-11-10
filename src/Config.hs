@@ -18,23 +18,23 @@ import qualified Util
 data Config = Config {
     -- | Additional directories to search for local modules.  Taken from the
     -- -i flag and 'include' config line.
-    configIncludes :: [FilePath]
+    includes :: [FilePath]
     -- | These language extensions are enabled by default.
-    , configLanguage :: [Extension.Extension]
+    , language :: [Extension.Extension]
     -- | Format the import block.
-    , configShowImports :: [Types.ImportLine] -> String
+    , showImports :: [Types.ImportLine] -> String
     -- | Often multiple modules from the package index will match
     -- a qualification.  Apply some heuristics to pick the most likely one.
-    , configPickModule :: FilePath -> [(Maybe Index.Package, Types.ModuleName)]
+    , pickModule :: FilePath -> [(Maybe Index.Package, Types.ModuleName)]
         -> Maybe (Maybe Index.Package, Types.ModuleName)
     }
 
 empty :: Config
 empty = Config
-    { configIncludes = []
-    , configLanguage = []
-    , configShowImports = formatGroups $ ImportOrder []
-    , configPickModule = pickModule defaultPriorities
+    { includes = []
+    , language = []
+    , showImports = formatGroups $ ImportOrder []
+    , pickModule = makePickModule defaultPriorities
     }
 
 data Priorities = Priorities {
@@ -71,10 +71,10 @@ defaultPriorities = Priorities
 -- local modules to ones from packages, then prefer modules from the packages
 -- in packagePriority.  If all else is equal alphabetize so at least the
 -- order is predictable.
-pickModule :: Priorities -> FilePath
+makePickModule :: Priorities -> FilePath
     -> [(Maybe Index.Package, Types.ModuleName)]
     -> Maybe (Maybe Index.Package, Types.ModuleName)
-pickModule prios modulePath candidates =
+makePickModule prios modulePath candidates =
     Util.head $ Util.sortOn (uncurry (prioritize prios modulePath)) $
         -- Don't pick myself!
         filter ((/= Types.pathToModule modulePath) . snd) candidates
