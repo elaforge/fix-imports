@@ -186,7 +186,7 @@ fixImports config modulePath mod cmts text = do
     -- Don't bother loading the index if I'm not going to use it.
     -- TODO actually, only load it if I don't find local imports
     -- I guess Data.Binary's laziness will serve me there
-    index <- if Set.null newImports then return Index.empty else Index.loadIndex
+    index <- if Set.null newImports then return Index.empty else Index.load
     mbNew <- mapM (mkImportLine config modulePath index) (Set.toList newImports)
     mbExisting <- mapM (findImport (Config.includes config)) imports
     let existing = map (Types.importDeclModule . fst) imports

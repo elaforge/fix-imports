@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 -- | Maintain the index from Qualification to the full module from the package
 -- db that this Qualification probably intends.
-module Index where
+module Index (Index, Package, empty, load, parseSections) where
 import Prelude hiding (mod)
 import Control.Monad
 import qualified Data.Either as Either
@@ -30,11 +30,11 @@ type Package = String
 empty :: Index
 empty = Map.empty
 
-loadIndex :: IO Index
-loadIndex = buildIndex -- TODO load cache?
+load :: IO Index
+load = build -- TODO load cache?
 
-buildIndex :: IO Index
-buildIndex = do
+build :: IO Index
+build = do
     (_, out, err) <- Util.readProcessWithExitCode "ghc-pkg"
         ["field", "*", "name,exposed,exposed-modules"]
     unless (T.null err) $

@@ -1,6 +1,10 @@
 * done
 - not done
 
+- Use a cabal sandbox if one is present.
+
+- Optionally write a cache of the package db.
+
 - Use haskell-names to guess the module to import based on the function name:
   http://documentup.com/haskell-suite/haskell-names
   This could even potentially support unqualified imports.
