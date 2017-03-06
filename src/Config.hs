@@ -6,7 +6,7 @@
 module Config where
 import qualified Data.Either as Either
 import qualified Data.List as List
-import qualified Language.Haskell.Exts.Annotated as Haskell
+import qualified Language.Haskell.Exts as Haskell
 import qualified Language.Haskell.Exts.Extension as Extension
 import qualified System.FilePath as FilePath
 

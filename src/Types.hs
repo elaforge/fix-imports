@@ -1,5 +1,5 @@
 module Types where
-import qualified Language.Haskell.Exts.Annotated as Haskell
+import qualified Language.Haskell.Exts as Haskell
 import qualified System.FilePath as FilePath
 
 

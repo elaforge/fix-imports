@@ -50,7 +50,7 @@ import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
 import qualified Data.Set as Set
 
-import qualified Language.Haskell.Exts.Annotated as Haskell
+import qualified Language.Haskell.Exts as Haskell
 import qualified Language.Haskell.Exts.Extension as Extension
 import qualified Language.Preprocessor.Cpphs as Cpphs
 
