@@ -10,7 +10,11 @@
 include: dist/build/my-project/my-project-tmp
 
 -- Control the sorting of the import list by prefix.
-import-order: Util Midi Ui Cmd Derive Perform Instrument Local LogView App
+-- These go in the given order, before other imports.
+import-order-first: Util Midi Ui Cmd Derive Perform Instrument Local
+    LogView App
+-- These go in the given order, but after all the other imports.
+import-order-last: Global
 
 -- When there are multiple candidates for a module, pick ones from a
 -- particular package first, or last.

@@ -43,12 +43,16 @@ parse text = (config, errors)
     (unknownLanguage, language) = Config.parseLanguage (get "language")
     unknownFields = Map.keys fields List.\\ valid
     valid =
-        [ "include", "import-order"
+        [ "include"
+        , "import-order-first", "import-order-last"
         , "prio-package-high", "prio-package-low"
         , "prio-module-high", "prio-module-low"
         , "language"
         ]
-    order = Config.ImportOrder (getModules "import-order")
+    order = Config.ImportOrder
+        { Config.importFirst = getModules "import-order-first"
+        , Config.importLast = getModules "import-order-last"
+        }
     prios = Config.Priorities (get "prio-package-high", get "prio-package-low")
         (getModules "prio-module-high", getModules "prio-module-low")
     fields = Map.fromList [(Text.unpack section, map Text.unpack words)

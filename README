@@ -16,6 +16,5 @@ haskell-src-exts will crash the program if it gets an ambigious operator
 fixity parse.  I don't know why it does that, but if you get a crash like that
 you can add your custom operators to the Config.
 
-It can be a little slow.  Most of this is probably that it rebuilds the
-package index on every run.  So if you have a large package db and it's too
-slow, caching the package index would probably help.
+It can be a little slow.  Most of the time is haskell-src-exts parsing the
+module.

@@ -33,7 +33,7 @@ empty :: Config
 empty = Config
     { includes = []
     , language = []
-    , showImports = formatGroups $ ImportOrder []
+    , showImports = formatGroups $ ImportOrder [] []
     , pickModule = makePickModule defaultPriorities
     }
 
@@ -45,8 +45,10 @@ data Priorities = Priorities {
     } deriving (Show)
 
 -- | Sort order for local modules.
-newtype ImportOrder = ImportOrder [Types.ModuleName]
-    deriving (Show)
+data ImportOrder = ImportOrder {
+    importFirst :: [Types.ModuleName]
+    , importLast :: [Types.ModuleName]
+    } deriving (Show)
 
 parseLanguage :: [String] -> ([String], [Extension.Extension])
 parseLanguage = Either.partitionEithers . map parse
@@ -129,17 +131,23 @@ formatImports imports = unlines $
 -- An unqualified import will follow a qualified one.  The Prelude, if
 -- imported, always goes first.
 formatGroups :: ImportOrder -> [Types.ImportLine] -> String
-formatGroups (ImportOrder order) imports =
+formatGroups order imports =
     unlines $ joinGroups
         [ showGroups (group (Util.sortOn packagePrio package))
         , showGroups (group (Util.sortOn localPrio local))
         ]
     where
-    packagePrio imp = (fromEnum (name imp /= prelude), name imp,
-        qualifiedPrio imp)
-    localPrio imp = (listPriority (topModule imp) (map Types.moduleName order),
-        name imp, qualifiedPrio imp)
-    qualifiedPrio imp = fromEnum (not (qualifiedImport imp))
+    packagePrio imp =
+        ( name imp /= prelude
+        , name imp
+        , qualifiedPrio imp
+        )
+    localPrio imp =
+        ( localPriority order (topModule imp)
+        , name imp
+        , qualifiedPrio imp
+        )
+    qualifiedPrio = not . qualifiedImport
     name = Types.importModule
     (local, package) = List.partition Types.importIsLocal imports
     group = collapse . Util.groupOn topModule
@@ -154,10 +162,17 @@ formatGroups (ImportOrder order) imports =
     joinGroups = List.intercalate [""] . filter (not . null)
     prelude = Types.ModuleName "Prelude"
 
-listPriority :: (Eq a) => a -> [a] -> (Int, Maybe Int)
-listPriority x xs = case List.elemIndex x xs of
-    Nothing -> (1, Nothing)
-    Just k -> (0, Just k)
+-- | Modules whose top level element is in 'importFirst' go first, ones in
+-- 'importLast' go last, and the rest go in the middle.
+localPriority :: ImportOrder -> String -> (Int, Maybe Int)
+localPriority order importTop = case List.elemIndex importTop firsts of
+    Just k -> (-1, Just k)
+    Nothing -> case List.elemIndex importTop lasts of
+        Nothing -> (0, Nothing)
+        Just k -> (1, Just k)
+    where
+    firsts = map Types.moduleName (importFirst order)
+    lasts = map Types.moduleName (importLast order)
 
 qualifiedImport :: Types.ImportLine -> Bool
 qualifiedImport = Haskell.importQualified . Types.importDecl
@@ -174,34 +189,3 @@ showImport (Types.ImportLine imp cmts _) =
         , Haskell.ribbonsPerLine = 1
         }
     mode = Haskell.defaultMode
-
-{-
--- t0 = map localPrio imports -- formatGroups priorities (map mkImport imports)
-t0 = formatGroups priorities imports
-    where
-    imports = map mkImport
-        [ ("Data.List", True, Just "List", False)
-        , ("Prelude", False, Nothing, False)
-        , ("Prelude", True, Nothing, False)
-        , local "A.B"
-        , local "A.C"
-        , local "C.A"
-        , local "B.A"
-        , local "B.B"
-        , local "B.C"
-        , local "B.D"
-        ]
-    local name = (name, True, Nothing, True)
-    mkImport (name, qualified, importAs, local) = Types.ImportLine decl [] local
-        where
-        decl = Haskell.ImportDecl empty (Haskell.ModuleName empty name)
-            qualified False Nothing (fmap (Haskell.ModuleName empty) importAs)
-            Nothing
-    empty = Haskell.SrcSpanInfo (Haskell.SrcSpan "" 0 0 0 0) []
-
-    priorities = ["A", "B"]
-    localPrio imp = (listPriority (topModule imp) priorities,
-        name imp, fromEnum (qualifiedImport imp))
-    topModule = takeWhile (/='.') . Types.moduleName . Types.importModule
-    name = Types.importModule
--}

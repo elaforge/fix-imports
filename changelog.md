@@ -1,3 +1,7 @@
+1.1.0
+
+- Rename import-order to import-order-first, and add import-order-last.
+
 1.0.5
 
 - support haskell-src-exts > 1.16
