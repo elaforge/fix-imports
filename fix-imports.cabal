@@ -1,5 +1,5 @@
 name: fix-imports
-version: 1.0.5
+version: 1.1.0
 cabal-version: >= 1.6
 build-type: Simple
 synopsis: Program to manage the imports of a haskell module
@@ -10,8 +10,8 @@ description:
     import block according to some heuristic you can define.  This only works
     for qualified imports!  Unqualified imports are left untouched.
     .
-    It's most convenient if bound to an editor key.
-    .
+    It's most convenient if bound to an editor key.  See the included vimrc
+    for an example.  You may have to cabal unpack or git clone to see it.
 
 category: Editor, Haskell, IDE
 license: BSD3
@@ -19,15 +19,17 @@ license-file: LICENSE
 author: Evan Laforge
 maintainer: Evan Laforge <qdunkan@gmail.com>
 stability: stable
-tested-with: GHC>=7.0.3
+tested-with: GHC>=8.0.2
 data-files: README, vimrc
 extra-source-files:
     src/*.hs
     changelog.md
+    vimrc
+    dot-fix-imports
 
 source-repository head
-    type: darcs
-    location: http://hub.darcs.net/elaforge/fix-imports
+    type: git
+    location: git://github.com/elaforge/fix-imports.git
 
 executable fix-imports
     main-is: Main.hs

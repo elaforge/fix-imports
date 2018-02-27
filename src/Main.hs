@@ -3,7 +3,6 @@
 --
 -- More documentation in "FixImports".
 module Main where
-import Control.Monad
 import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Text as Text

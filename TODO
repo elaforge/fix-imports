@@ -3,7 +3,8 @@
 
 - Use a cabal sandbox if one is present.
 
-- Optionally write a cache of the package db.
+/ Optionally write a cache of the package db.
+  . No need, most time is spent in haskell-src-exts parsing.
 
 - Use haskell-names to guess the module to import based on the function name:
   http://documentup.com/haskell-suite/haskell-names
