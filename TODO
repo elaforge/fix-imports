@@ -1,5 +1,4 @@
-* done
-- not done
+* done; - not done; / decided against
 
 - Use a cabal sandbox if one is present.
 
@@ -10,43 +9,15 @@
   http://documentup.com/haskell-suite/haskell-names
   This could even potentially support unqualified imports.
 
-* If I see a Prelude.something, don't import qualified Prelude unless it's
-already there.  Importing turns off the implicit unqualified import.
-
-* Scale.All didn't find Derive.Scale.All like it should have
-
 / Didn't want to import Ui.Types when I already have Types imported
 unqualified.
   I think this is working as intended, because an unqualified import can also
   be used qualified.
 
-* Doesn't understand that 'import X as Y' is the same as
-'import qualified X as Y'
-
 - If I set Util.Map in prio-module-low or Data.Map in prio-module-high, why
 does Util.Map still get imported?  It's because local modules are always
 prioritized above package ones.  To fix this I could have a ad-hoc map of e.g.
 'Map -> Data.Map' to manually set certain resolutions.
-
-* Bug: never import the current module
-
-* Bug: Track imported Cmd.Lang.LTrack, should match entire component, not
-just prefix.
-
-* Exception should be Control.Exception, not Exception
-
-* Read per-project priorities so e.g. it looks for Data.Map before Util.Map
-or Util.PPrint before App.PPrint
-
-* Also need prio within system libs, e.g. GHC.* modules should be low prio
-
-* Should search in subdirs of current top level module name?  E.g., in
-Derive.Call.Note, Internal gets Cmd.Internal, not Derive.Deriver.Internal
-
-* Index should use Text instead of String
-
-* IO should be System.IO, not Data.Text.Lazy.IO
-  And Process should be System.Process, not System.Posix.Process
 
 - If the choice is still ambiguous I could ask interactively.
 
