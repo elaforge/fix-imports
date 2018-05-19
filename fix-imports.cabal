@@ -33,6 +33,7 @@ source-repository head
 
 executable fix-imports
     main-is: Main.hs
+    other-modules: Config, FixImports, Index, Types, Util
     hs-source-dirs: src
     build-depends: base >= 3 && < 5, containers, directory, filepath, process
         , haskell-src-exts >= 1.16.0

@@ -1,5 +1,5 @@
 module Util where
-import Prelude hiding (head, join)
+import Prelude hiding (head)
 import qualified Control.Concurrent as Concurrent
 import qualified Control.Concurrent.MVar as MVar
 import qualified Control.Exception as Exception
