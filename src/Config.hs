@@ -3,6 +3,7 @@
 -- your own Main.hs that passes its own Config.
 --
 -- TODO dyre does this sort of thing
+{-# LANGUAGE NamedFieldPuns #-}
 module Config where
 import qualified Data.Either as Either
 import qualified Data.List as List
@@ -39,10 +40,12 @@ empty = Config
 
 data Priorities = Priorities {
     -- | Place these packages either first or last in priority.
-    prioPackage :: ([Index.Package], [Index.Package])
+    prioPackage :: Priority Index.Package
     -- | Place these modules either first or last in priority.
-    , prioModule :: ([Types.ModuleName], [Types.ModuleName])
+    , prioModule :: Priority Types.ModuleName
     } deriving (Show)
+
+data Priority a = Priority { high :: [a], low :: [a] } deriving (Show)
 
 -- | Sort order for local modules.
 data ImportOrder = ImportOrder {
@@ -64,8 +67,15 @@ defaultPriorities = Priorities
     -- haskell98 has obsolete toplevel module names.
     -- ghc exports tons of toplevel modules that you probably don't want.
     -- Cabal is probably mostly used in Setup.hs and exports Distribution.Text.
-    ([], ["haskell98", "ghc", "Cabal"])
-    (map Types.ModuleName [], map Types.ModuleName ["GHC"])
+    { prioPackage = Priority
+        { high = []
+        , low = ["haskell98", "ghc", "Cabal"]
+        }
+    , prioModule = Priority
+        { high = map Types.ModuleName []
+        , low = map Types.ModuleName ["GHC"]
+        }
+    }
 
 -- * pick candidates
 
@@ -77,7 +87,7 @@ makePickModule :: Priorities -> FilePath
     -> [(Maybe Index.Package, Types.ModuleName)]
     -> Maybe (Maybe Index.Package, Types.ModuleName)
 makePickModule prios modulePath candidates =
-    Util.head $ Util.sortOn (uncurry (prioritize prios modulePath)) $
+    Util.minimumOn (uncurry (prioritize prios modulePath)) $
         -- Don't pick myself!
         filter ((/= Types.pathToModule modulePath) . snd) candidates
 
@@ -90,8 +100,9 @@ prioritize prios modulePath mbPackage mod =
     )
     where
     packagePrio _ Nothing = (localPrio modulePath mod, 0)
-    packagePrio (high, low) (Just pack) = (1, searchPrio high low pack)
-    modulePrio (high, low) =
+    packagePrio (Priority {high, low}) (Just pack) =
+        (1, searchPrio high low pack)
+    modulePrio (Priority {high, low}) =
         searchPrio (map Types.moduleName high) (map Types.moduleName low)
         . Types.moduleName
     dots = length . filter (=='.') . Types.moduleName

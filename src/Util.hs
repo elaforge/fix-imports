@@ -48,6 +48,11 @@ sortOn key = List.sortBy (compare `Function.on` key)
 groupOn :: (Eq k) => (a -> k) -> [a] -> [[a]]
 groupOn key = List.groupBy ((==) `Function.on` key)
 
+minimumOn :: Ord k => (a -> k) -> [a] -> Maybe a
+minimumOn _ [] = Nothing
+minimumOn key xs = Just (List.foldl1' f xs)
+    where f low x = if key x < key low then x else low
+
 -- * control
 
 ifM :: (Monad m) => m Bool -> m a -> m a -> m a

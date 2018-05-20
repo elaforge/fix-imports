@@ -2,6 +2,7 @@
 -- a config file from the current directory.
 --
 -- More documentation in "FixImports".
+{-# LANGUAGE DisambiguateRecordFields #-}
 module Main where
 import qualified Data.List as List
 import qualified Data.Map as Map
@@ -52,8 +53,16 @@ parse text = (config, errors)
         { Config.importFirst = getModules "import-order-first"
         , Config.importLast = getModules "import-order-last"
         }
-    prios = Config.Priorities (get "prio-package-high", get "prio-package-low")
-        (getModules "prio-module-high", getModules "prio-module-low")
+    prios = Config.Priorities
+        { prioPackage = Config.Priority
+            { high = get "prio-package-high"
+            , low = get "prio-package-low"
+            }
+        , prioModule = Config.Priority
+            { high = getModules "prio-module-high"
+            , low = getModules "prio-module-low"
+            }
+        }
     fields = Map.fromList [(Text.unpack section, map Text.unpack words)
         | (section, words) <- Index.parseSections text]
     getModules = map Types.ModuleName . get
