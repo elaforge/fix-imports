@@ -5,9 +5,9 @@ setopt extended_glob
 cd $(dirname $0)
 bin=../../dist/build/fix-imports/fix-imports
 
-tests=$*
+tests=($@)
 if [[ -z $tests ]]; then
-    tests=$(echo *(/))
+    tests=($(echo *(/)))
 fi
 
 tmp=$(mktemp -t fix-imports)
@@ -32,14 +32,14 @@ function test() {
 }
 
 failed=0
-for test in ${=tests}; do
+for test in $tests; do
     if ! test $test; then
         echo $test FAILED
         failed=1
-        break
     else
         echo $test passed
     fi
+    echo
 done
 
 rm -f $tmp
