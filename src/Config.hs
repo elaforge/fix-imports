@@ -3,14 +3,18 @@
 -- your own Main.hs that passes its own Config.
 --
 -- TODO dyre does this sort of thing
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE PartialTypeSignatures #-}
+{-# OPTIONS_GHC -Wno-partial-type-signatures #-}
+-- Use partial signatures for sort keys, I don't care what they are as long as
+-- they are in Ord.
 module Config where
 import qualified Data.Either as Either
 import qualified Data.List as List
+import qualified Debug.Trace as Trace
 import qualified Language.Haskell.Exts as Haskell
 import qualified Language.Haskell.Exts.Extension as Extension
 import qualified System.FilePath as FilePath
-
 import qualified Index
 import qualified Types
 import qualified Util
@@ -48,7 +52,7 @@ data Priorities = Priorities {
     , prioModule :: Priority Types.ModuleName
     } deriving (Show)
 
-data Priority a = Priority { high :: [a], low :: [a] } deriving (Show)
+data Priority a = Priority { high :: [a], low :: [a] } deriving (Show, Functor)
 
 parseLanguage :: [String] -> ([String], [Extension.Extension])
 parseLanguage = Either.partitionEithers . map parse
@@ -69,7 +73,7 @@ defaultPriorities = Priorities
         , low = ["haskell98", "ghc", "Cabal"]
         }
     , prioModule = Priority
-        { high = map Types.ModuleName []
+        { high = map Types.ModuleName ["Prelude"]
         , low = map Types.ModuleName ["GHC"]
         }
     }
@@ -87,23 +91,21 @@ makePickModule :: Priorities -> FilePath
     -> [(Maybe Index.Package, Types.ModuleName)]
     -> Maybe (Maybe Index.Package, Types.ModuleName)
 makePickModule prios modulePath candidates =
-    Util.minimumOn (uncurry (prioritize prios modulePath)) $
+    Util.minimumOn (uncurry (pickModuleKey prios modulePath)) $
         -- Don't pick myself!
         filter ((/= Types.pathToModule modulePath) . snd) candidates
 
-prioritize :: Priorities -> FilePath -> Maybe String -> Types.ModuleName
-    -> ((Int, Int), (Int, Int), String)
-prioritize prios modulePath mbPackage mod =
+pickModuleKey :: Priorities -> FilePath -> Maybe String -> Types.ModuleName
+    -> _
+pickModuleKey prios modulePath mbPackage mod =
     ( (modulePrio (prioModule prios) mod, dots mod)
     , packagePrio (prioPackage prios) mbPackage
     , Types.moduleName mod
     )
     where
-    packagePrio _ Nothing = (localPrio modulePath mod, 0)
-    packagePrio (Priority {high, low}) (Just pkg) =
-        (1, searchPrio high low pkg)
-    modulePrio (Priority {high, low}) =
-        searchPrio (map Types.moduleName high) (map Types.moduleName low)
+    packagePrio _ Nothing = (localPrio modulePath mod, (0, Nothing))
+    packagePrio prio (Just pkg) = (1, prioKey prefixIndex prio pkg)
+    modulePrio prio = prioKey prefixIndex (Types.moduleName <$> prio)
         . Types.moduleName
     dots = length . filter (=='.') . Types.moduleName
 
@@ -114,11 +116,6 @@ localPrio :: FilePath -> Types.ModuleName -> Int
 localPrio modulePath mod = negate $ length $ takeWhile id $ zipWith (==)
     (Util.split "/" (Types.moduleToPath mod))
     (Util.split "/" (FilePath.takeDirectory modulePath))
-
-searchPrio :: [String] -> [String] -> String -> Int
-searchPrio high low mod = case List.findIndex (`List.isPrefixOf` mod) high of
-    Just n -> - length high + n
-    Nothing -> maybe 0 (+1) (List.findIndex (`List.isPrefixOf` mod) low)
 
 
 -- * format imports
@@ -142,27 +139,44 @@ formatImports imports = unlines $
 --
 -- An unqualified import will follow a qualified one.  The Prelude, if
 -- imported, always goes first.
+
+-- formatGroups :: Priority Types.ModuleName -> [Types.ImportLine] -> String
+-- formatGroups order imports =
+--     unlines $ joinGroups
+--         [ showGroups (group (Util.sortOn packagePrio package))
+--         , showGroups (group (Util.sortOn localPrio local))
+--         ]
+--     where
+--     packagePrio imp =
+--         ( name imp /= prelude
+--         , name imp
+--         , qualifiedPrio imp
+--         )
+--     localPrio imp =
+--         ( localPriority order (topModule imp)
+--         , name imp
+--         , qualifiedPrio imp
+--         )
+--     qualifiedPrio = not . qualifiedImport
+--     name = Types.importModule
+--     (local, package) =
+--         List.partition ((==Types.Local) . Types.importSource) imports
+--     group = collapse . Util.groupOn topModule
+--     topModule = takeWhile (/='.') . Types.moduleName . Types.importModule
+--     collapse [] = []
+--     collapse (x:xs)
+--         | length x <= 2 = case collapse xs of
+--             [] -> [x]
+--             y : ys -> (x ++ y) : ys
+--         | otherwise = x : collapse xs
+--     showGroups = List.intercalate [""] . map (map showImport)
+--     joinGroups = List.intercalate [""] . filter (not . null)
+--     prelude = Types.ModuleName "Prelude"
+
 formatGroups :: Priority Types.ModuleName -> [Types.ImportLine] -> String
-formatGroups order imports =
-    unlines $ joinGroups
-        [ showGroups (group (Util.sortOn packagePrio package))
-        , showGroups (group (Util.sortOn localPrio local))
-        ]
+formatGroups prio =
+    unlines . showGroups . group . Util.sortOn (importSortKey (Trace.traceShowId prio))
     where
-    packagePrio imp =
-        ( name imp /= prelude
-        , name imp
-        , qualifiedPrio imp
-        )
-    localPrio imp =
-        ( localPriority order (topModule imp)
-        , name imp
-        , qualifiedPrio imp
-        )
-    qualifiedPrio = not . qualifiedImport
-    name = Types.importModule
-    (local, package) =
-        List.partition ((==Types.Local) . Types.importSource) imports
     group = collapse . Util.groupOn topModule
     topModule = takeWhile (/='.') . Types.moduleName . Types.importModule
     collapse [] = []
@@ -172,8 +186,47 @@ formatGroups order imports =
             y : ys -> (x ++ y) : ys
         | otherwise = x : collapse xs
     showGroups = List.intercalate [""] . map (map showImport)
-    joinGroups = List.intercalate [""] . filter (not . null)
-    prelude = Types.ModuleName "Prelude"
+
+-- | The priority order is:
+--
+-- - Package imports go beore Local imports.  Local imports use the longest
+-- match in 'Priority'.  The rationale is that ordering rules are
+-- project-specific, so they don't apply to imports from external projects.
+--
+-- - The longest match in Priority Types.ModuleName.
+--
+-- - Import name.
+--
+-- - Qualified before unqualified.
+importSortKey :: Priority Types.ModuleName -> Types.ImportLine -> _
+importSortKey prio imp = Trace.traceShowId
+    ( case Types.importSource imp of
+        Types.Package -> Nothing
+        Types.Local -> Just $
+            prioKey longestPrefixIndex prio (Types.importModule imp)
+    , Types.importModule imp
+    , not $ qualifiedImport imp
+    )
+
+prioKey :: (b -> [a] -> Maybe c) -> Priority a -> b -> (Int, Maybe c)
+prioKey match prio mod = case match mod (high prio) of
+    Just i -> (-1, Just i)
+    Nothing -> case match mod (low prio) of
+        Nothing -> (0, Nothing)
+        Just i -> (1, Just i)
+
+longestPrefixIndex :: Types.ModuleName -> [Types.ModuleName] -> Maybe Int
+longestPrefixIndex mod mods =
+    snd <$> Util.maximumOn fst
+        [ (commonPrefix (Types.moduleName mod) (Types.moduleName m), i)
+        | (i, m) <- zip [0..] mods
+        ]
+
+prefixIndex :: String -> [String] -> Maybe Int
+prefixIndex str strs = List.findIndex (`List.isPrefixOf` str) strs
+
+commonPrefix :: Eq a => [a] -> [a] -> Int
+commonPrefix xs ys = length . takeWhile (uncurry (==)) $ zip xs ys
 
 -- | Modules whose top level element is in 'importFirst' go first, ones in
 -- 'importLast' go last, and the rest go in the middle.

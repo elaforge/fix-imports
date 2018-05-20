@@ -53,6 +53,11 @@ minimumOn _ [] = Nothing
 minimumOn key xs = Just (List.foldl1' f xs)
     where f low x = if key x < key low then x else low
 
+maximumOn :: Ord k => (a -> k) -> [a] -> Maybe a
+maximumOn _ [] = Nothing
+maximumOn key xs = Just (List.foldl1' f xs)
+    where f high x = if key x > key high then x else high
+
 -- * control
 
 ifM :: (Monad m) => m Bool -> m a -> m a -> m a
