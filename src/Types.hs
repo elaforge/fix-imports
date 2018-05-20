@@ -6,8 +6,11 @@ import qualified System.FilePath as FilePath
 data ImportLine = ImportLine {
     importDecl :: ImportDecl
     , importComments :: [Comment]
-    , importIsLocal :: Bool
+    , importSource :: !Source
     } deriving (Show)
+
+-- | Where did this import come from?
+data Source = Local | Package deriving (Eq, Show)
 
 -- | A Comment is associated with a particular import line.
 data Comment = Comment CmtPos String deriving (Show)

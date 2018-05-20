@@ -1,5 +1,8 @@
 * done; - not done; / decided against
 
+- import-order-last: Synth.Lib.Global doesn't work
+  . Maybe it just does first match, not most specific match?
+
 - Use a cabal sandbox if one is present.
 
 / Optionally write a cache of the package db.
@@ -18,6 +21,8 @@ unqualified.
 does Util.Map still get imported?  It's because local modules are always
 prioritized above package ones.  To fix this I could have a ad-hoc map of e.g.
 'Map -> Data.Map' to manually set certain resolutions.
+  . Or, why not just make local vs global only apply when not in
+    prio-module-high or prio-module-low.
 
 - If the choice is still ambiguous I could ask interactively.
 

@@ -118,7 +118,8 @@ formatImports imports = unlines $
     map showImport (sort package) ++ [""] ++ map showImport (sort local)
     where
     sort = Util.sortOn Types.importModule
-    (local, package) = List.partition Types.importIsLocal imports
+    (local, package) =
+        List.partition ((==Types.Local) . Types.importSource) imports
 
 -- | Format import list.  Imports are alphabetized and grouped into sections
 -- based on the top level module name (before the first dot).  Sections that
@@ -149,7 +150,8 @@ formatGroups order imports =
         )
     qualifiedPrio = not . qualifiedImport
     name = Types.importModule
-    (local, package) = List.partition Types.importIsLocal imports
+    (local, package) =
+        List.partition ((==Types.Local) . Types.importSource) imports
     group = collapse . Util.groupOn topModule
     topModule = takeWhile (/='.') . Types.moduleName . Types.importModule
     collapse [] = []

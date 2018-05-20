@@ -248,14 +248,15 @@ mkImportLine config modulePath index qual@(Types.Qualification name) = do
 -- import.  Nothing if it wasn't found at all.
 findModule :: Config.Config -> Index.Index -> FilePath
     -- ^ Path to the module being fixed.
-    -> Types.Qualification -> IO (Maybe (Types.ModuleName, Bool))
+    -> Types.Qualification -> IO (Maybe (Types.ModuleName, Types.Source))
 findModule config index modulePath qual = do
     found <- findLocalModules (Config.includes config) qual
     let local = [(Nothing, Types.pathToModule fn) | fn <- found]
         package = map (Arrow.first Just) $ Map.findWithDefault [] qual index
     -- clunky
     return $ case Config.pickModule config modulePath (local++package) of
-        Just (package, mod) -> Just (mod, package == Nothing)
+        Just (package, mod) -> Just
+            (mod, if package == Nothing then Types.Local else Types.Package)
         Nothing -> Nothing
 
 -- | Given A.B, look for A/B.hs, */A/B.hs, */*/A/B.hs, etc. in each of the
@@ -297,14 +298,14 @@ findImport includes (imp, cmts) = do
     found <- findModuleName includes (Types.importDeclModule imp)
     return $ case found of
         Nothing -> Nothing
-        Just local -> Just $ Types.ImportLine imp cmts local
+        Just source -> Just $ Types.ImportLine imp cmts source
 
 -- | True if it was found in a local directory, False if it was found in the
 -- ghc package db, and Nothing if it wasn't found at all.
-findModuleName :: [FilePath] -> Types.ModuleName -> IO (Maybe Bool)
+findModuleName :: [FilePath] -> Types.ModuleName -> IO (Maybe Types.Source)
 findModuleName includes mod =
-    Util.ifM (isLocalModule mod ("" : includes)) (return (Just True)) $
-        Util.ifM (isPackageModule mod) (return (Just False))
+    Util.ifM (isLocalModule mod ("" : includes)) (return (Just Types.Local)) $
+        Util.ifM (isPackageModule mod) (return (Just Types.Package))
             (return Nothing)
 
 isLocalModule :: Types.ModuleName -> [FilePath] -> IO Bool
