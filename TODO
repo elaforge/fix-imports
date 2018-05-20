@@ -17,12 +17,14 @@ unqualified.
   I think this is working as intended, because an unqualified import can also
   be used qualified.
 
-- If I set Util.Map in prio-module-low or Data.Map in prio-module-high, why
+* If I set Util.Map in prio-module-low or Data.Map in prio-module-high, why
 does Util.Map still get imported?  It's because local modules are always
 prioritized above package ones.  To fix this I could have a ad-hoc map of e.g.
 'Map -> Data.Map' to manually set certain resolutions.
   . Or, why not just make local vs global only apply when not in
     prio-module-high or prio-module-low.
+  . I think I just change the order in Config.prioritize.  Could it be that
+    simple?
 
 - If the choice is still ambiguous I could ask interactively.
 

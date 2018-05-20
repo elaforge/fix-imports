@@ -79,10 +79,13 @@ defaultPriorities = Priorities
 
 -- * pick candidates
 
--- | Prefer local modules that share prefix with the module path, then prefer
--- local modules to ones from packages, then prefer modules from the packages
--- in packagePriority.  If all else is equal alphabetize so at least the
--- order is predictable.
+-- | The order of priority is:
+--
+-- - high or low in 'prioModule'
+-- - local modules that share prefix with the module path
+-- - local modules to ones from packages
+-- - package modules high or low in 'prioPackage'
+-- - If all else is equal alphabetize so at least the order is predictable.
 makePickModule :: Priorities -> FilePath
     -> [(Maybe Index.Package, Types.ModuleName)]
     -> Maybe (Maybe Index.Package, Types.ModuleName)
@@ -94,14 +97,14 @@ makePickModule prios modulePath candidates =
 prioritize :: Priorities -> FilePath -> Maybe String -> Types.ModuleName
     -> ((Int, Int), (Int, Int), String)
 prioritize prios modulePath mbPackage mod =
-    ( packagePrio (prioPackage prios) mbPackage
-    , (modulePrio (prioModule prios) mod, dots mod)
+    ( (modulePrio (prioModule prios) mod, dots mod)
+    , packagePrio (prioPackage prios) mbPackage
     , Types.moduleName mod
     )
     where
     packagePrio _ Nothing = (localPrio modulePath mod, 0)
-    packagePrio (Priority {high, low}) (Just pack) =
-        (1, searchPrio high low pack)
+    packagePrio (Priority {high, low}) (Just pkg) =
+        (1, searchPrio high low pkg)
     modulePrio (Priority {high, low}) =
         searchPrio (map Types.moduleName high) (map Types.moduleName low)
         . Types.moduleName
