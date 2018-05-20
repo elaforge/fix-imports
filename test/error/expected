@@ -1,3 +1,3 @@
-error: Main.hs: 3: 1: Parse error in expression: a + q #
+error: Main.hs:3:1: Parse error in expression: a + q #
 x = a * b + c
 f = a + q#
