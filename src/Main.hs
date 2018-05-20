@@ -49,9 +49,9 @@ parse text = (config, errors)
         , "prio-module-high", "prio-module-low"
         , "language"
         ]
-    order = Config.ImportOrder
-        { Config.importFirst = getModules "import-order-first"
-        , Config.importLast = getModules "import-order-last"
+    order = Config.Priority
+        { high = getModules "import-order-first"
+        , low = getModules "import-order-last"
         }
     prios = Config.Priorities
         { prioPackage = Config.Priority

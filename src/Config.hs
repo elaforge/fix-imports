@@ -34,7 +34,10 @@ empty :: Config
 empty = Config
     { includes = []
     , language = []
-    , showImports = formatGroups $ ImportOrder [] []
+    , showImports = formatGroups $ Priority
+        { high = []
+        , low = []
+        }
     , pickModule = makePickModule defaultPriorities
     }
 
@@ -46,12 +49,6 @@ data Priorities = Priorities {
     } deriving (Show)
 
 data Priority a = Priority { high :: [a], low :: [a] } deriving (Show)
-
--- | Sort order for local modules.
-data ImportOrder = ImportOrder {
-    importFirst :: [Types.ModuleName]
-    , importLast :: [Types.ModuleName]
-    } deriving (Show)
 
 parseLanguage :: [String] -> ([String], [Extension.Extension])
 parseLanguage = Either.partitionEithers . map parse
@@ -145,7 +142,7 @@ formatImports imports = unlines $
 --
 -- An unqualified import will follow a qualified one.  The Prelude, if
 -- imported, always goes first.
-formatGroups :: ImportOrder -> [Types.ImportLine] -> String
+formatGroups :: Priority Types.ModuleName -> [Types.ImportLine] -> String
 formatGroups order imports =
     unlines $ joinGroups
         [ showGroups (group (Util.sortOn packagePrio package))
@@ -180,15 +177,15 @@ formatGroups order imports =
 
 -- | Modules whose top level element is in 'importFirst' go first, ones in
 -- 'importLast' go last, and the rest go in the middle.
-localPriority :: ImportOrder -> String -> (Int, Maybe Int)
+localPriority :: Priority Types.ModuleName -> String -> (Int, Maybe Int)
 localPriority order importTop = case List.elemIndex importTop firsts of
     Just k -> (-1, Just k)
     Nothing -> case List.elemIndex importTop lasts of
         Nothing -> (0, Nothing)
         Just k -> (1, Just k)
     where
-    firsts = map Types.moduleName (importFirst order)
-    lasts = map Types.moduleName (importLast order)
+    firsts = map Types.moduleName (high order)
+    lasts = map Types.moduleName (low order)
 
 qualifiedImport :: Types.ImportLine -> Bool
 qualifiedImport = Haskell.importQualified . Types.importDecl
