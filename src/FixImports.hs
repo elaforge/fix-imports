@@ -76,19 +76,19 @@ runMain config = do
     -- not have a name.
     (modulePath, (verbose, includes)) <-
         parseArgs =<< System.Environment.getArgs
-    text <- IO.getContents
+    source <- IO.getContents
     config <- return $ config
         { Config.includes = includes ++ Config.includes config }
-    fixed <- fixModule config modulePath text
+    fixed <- fixModule config modulePath source
         `Exception.catch` (\(exc :: Exception.SomeException) ->
             return $ Left $ "exception: " ++ show exc)
     case fixed of
         Left err -> do
-            IO.putStr text
+            IO.putStr source
             IO.hPutStrLn IO.stderr $ "error: " ++ err
             System.Exit.exitFailure
-        Right (Result text added removed) -> do
-            IO.putStr text
+        Right (Result source added removed) -> do
+            IO.putStr source
             let names = Util.join ", " . map Types.moduleName . Set.toList
                 (addedMsg, removedMsg) = (names added, names removed)
             when (verbose && (not (null addedMsg) || not (null removedMsg))) $
@@ -130,24 +130,27 @@ data Result = Result {
     , resultRemoved :: Set.Set Types.ModuleName
     } deriving (Show)
 
-fixModule :: Config.Config -> FilePath -> String
-    -> IO (Either String Result)
-fixModule config modulePath text = do
-    processed <- cppModule modulePath text
-    case parse processed of
+fixModule :: Config.Config -> FilePath -> String -> IO (Either String Result)
+fixModule config modulePath source = do
+    processedSource <- cppModule modulePath source
+    case parse (Config.language config) modulePath processedSource of
         Haskell.ParseFailed srcloc err ->
             return $ Left $ Haskell.prettyPrint srcloc ++ ": " ++ err
         Haskell.ParseOk (mod, cmts) ->
-            fixImports config modulePath mod cmts text
-    where
-    parse = Haskell.parseFileContentsWithComments $ Haskell.defaultParseMode
+            fixImports config modulePath mod cmts source
+
+parse :: [Extension.Extension] -> FilePath -> String
+    -> Haskell.ParseResult
+        (Haskell.Module Haskell.SrcSpanInfo, [Haskell.Comment])
+parse extensions modulePath =
+    Haskell.parseFileContentsWithComments $ Haskell.defaultParseMode
         { Haskell.parseFilename = modulePath
-        , Haskell.extensions = Config.language config
-            ++ defaultExtensions
+        , Haskell.extensions = extensions ++ defaultExtensions
         -- The meaning of Nothing is undocumented, but I think it means
         -- to not check for fixity ambiguity at all, which is what I want.
         , Haskell.fixities = Nothing
         }
+    where
     defaultExtensions = map Extension.EnableExtension $
         Extension.toExtensionList Extension.Haskell2010 []
         -- GHC has this extension enabled by default, and it's easy
@@ -158,7 +161,7 @@ fixModule config modulePath text = do
 -- | The parse function takes a CPP extension, but doesn't actually pay any
 -- attention to it, so I have to run CPP myself.  The imports are fixed
 -- post-CPP so if you put CPP in the imports block it will be stripped out.
--- Serves you right anyway.
+-- It seems hard to fix imports inside CPP.
 cppModule :: FilePath -> String -> IO String
 cppModule filename s = Cpphs.runCpphs options filename s
     where
@@ -173,7 +176,7 @@ cppModule filename s = Cpphs.runCpphs options filename s
         , Cpphs.lang = True -- lex input as haskell code
         , Cpphs.ansi = True
         , Cpphs.layout = True
-        , Cpphs.literate = False -- untested with literate code 
+        , Cpphs.literate = False -- untested with literate code
         , Cpphs.warnings = False
         }
 
@@ -182,7 +185,7 @@ cppModule filename s = Cpphs.runCpphs options filename s
 -- import block on the import file, and replace it.
 fixImports :: Config.Config -> FilePath -> Types.Module
     -> [Haskell.Comment] -> String -> IO (Either String Result)
-fixImports config modulePath mod cmts text = do
+fixImports config modulePath mod cmts source = do
     -- Don't bother loading the index if I'm not going to use it.
     -- TODO actually, only load it if I don't find local imports
     -- I guess Data.Binary's laziness will serve me there
@@ -202,7 +205,7 @@ fixImports config modulePath mod cmts text = do
         _ : _ -> Left $ "modules not found: "
             ++ Util.join ", " (map Types.moduleName notFound)
         [] -> Right $ Result
-            { resultText = substituteImports formattedImports range text
+            { resultText = substituteImports formattedImports range source
             , resultAdded = Set.fromList $
                 map (Types.importDeclModule . Types.importDecl) $
                 Maybe.catMaybes mbNew
@@ -215,10 +218,10 @@ fixImports config modulePath mod cmts text = do
 -- | Clip out the range from the given text and replace it with the given
 -- lines.
 substituteImports :: String -> (Int, Int) -> String -> String
-substituteImports imports (start, end) text =
+substituteImports imports (start, end) source =
     unlines pre ++ imports ++ unlines post
     where
-    (pre, within) = splitAt start (lines text)
+    (pre, within) = splitAt start (lines source)
     (_, post) = splitAt (end-start) within
 
 -- * find new imports

@@ -1,5 +1,6 @@
 -- | Per-project 'Config' and functions to interpret it.
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE OverloadedStrings #-}
 module Config where
 import qualified Data.Either as Either
 import qualified Data.List as List
@@ -159,15 +160,6 @@ searchPrio high low mod = case List.findIndex (`List.isPrefixOf` mod) high of
 
 -- * format imports
 
--- | Print out the imports with spacing how I like it.
-formatImports :: [Types.ImportLine] -> String
-formatImports imports = unlines $
-    map showImport (sort package) ++ [""] ++ map showImport (sort local)
-    where
-    sort = Util.sortOn Types.importModule
-    (local, package) =
-        List.partition ((==Types.Local) . Types.importSource) imports
-
 -- | Format import list.  Imports are alphabetized and grouped into sections
 -- based on the top level module name (before the first dot).  Sections that
 -- are too small are grouped with the section below them.
@@ -179,7 +171,7 @@ formatImports imports = unlines $
 -- An unqualified import will follow a qualified one.  The Prelude, if
 -- imported, always goes first.
 formatGroups :: Priority Types.ModuleName -> [Types.ImportLine] -> String
-formatGroups order imports =
+formatGroups prio imports =
     unlines $ joinGroups
         [ showGroups (group (Util.sortOn packagePrio package))
         , showGroups (group (Util.sortOn localPrio local))
@@ -191,7 +183,7 @@ formatGroups order imports =
         , qualifiedPrio imp
         )
     localPrio imp =
-        ( localPriority order (topModule imp)
+        ( localPriority prio (topModule imp)
         , name imp
         , qualifiedPrio imp
         )
@@ -214,14 +206,14 @@ formatGroups order imports =
 -- | Modules whose top level element is in 'importFirst' go first, ones in
 -- 'importLast' go last, and the rest go in the middle.
 localPriority :: Priority Types.ModuleName -> String -> (Int, Maybe Int)
-localPriority order importTop = case List.elemIndex importTop firsts of
+localPriority prio importTop = case List.elemIndex importTop firsts of
     Just k -> (-1, Just k)
     Nothing -> case List.elemIndex importTop lasts of
         Nothing -> (0, Nothing)
         Just k -> (1, Just k)
     where
-    firsts = map Types.moduleName (high order)
-    lasts = map Types.moduleName (low order)
+    firsts = map Types.moduleName (high prio)
+    lasts = map Types.moduleName (low prio)
 
 qualifiedImport :: Types.ImportLine -> Bool
 qualifiedImport = Haskell.importQualified . Types.importDecl

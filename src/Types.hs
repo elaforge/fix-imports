@@ -1,4 +1,6 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Types where
+import qualified Data.String as String
 import qualified Language.Haskell.Exts as Haskell
 import qualified System.FilePath as FilePath
 
@@ -25,7 +27,7 @@ newtype Qualification = Qualification String
     deriving (Eq, Ord, Show)
 
 newtype ModuleName = ModuleName String
-    deriving (Eq, Ord, Show)
+    deriving (Eq, Ord, Show, String.IsString)
 
 moduleName :: ModuleName -> String
 moduleName (ModuleName n) = n

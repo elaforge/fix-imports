@@ -39,3 +39,18 @@ executable fix-imports
         , haskell-src-exts >= 1.16.0
         , uniplate, split, cpphs, text
     ghc-options: -Wall -fno-warn-name-shadowing
+
+test-suite test
+    type: exitcode-stdio-1.0
+    hs-source-dirs: src
+    main-is: RunTests.hs
+    build-depends:
+        base
+        , test-karya
+    other-modules:
+        Config
+        Config_test
+        FixImports
+        Index
+        Types
+        Util
