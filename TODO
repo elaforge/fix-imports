@@ -5,6 +5,11 @@
   . Because order only expects toplevel name.
   . I can generalize to longest prefix match.
 
+  - even just import-orde-last: Global doesn't seem to work
+
+- putting Data.Map in prio-module-high also makes everything under Data.Map
+  high prio.  Then I get Data.Map.Internal.Debug over Util.Debug.
+
 - Use a cabal sandbox if one is present.
 
 / Optionally write a cache of the package db.

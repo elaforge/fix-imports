@@ -1,12 +1,11 @@
--- | This module pulls out a few values I'm more likely to want to configure
--- per-project.  They are passed to 'FixImports.runMain', so you can write
--- your own Main.hs that passes its own Config.
---
--- TODO dyre does this sort of thing
+-- | Per-project 'Config' and functions to interpret it.
 {-# LANGUAGE NamedFieldPuns #-}
 module Config where
 import qualified Data.Either as Either
 import qualified Data.List as List
+import qualified Data.Map as Map
+import qualified Data.Text as Text
+
 import qualified Language.Haskell.Exts as Haskell
 import qualified Language.Haskell.Exts.Extension as Extension
 import qualified System.FilePath as FilePath
@@ -22,33 +21,70 @@ data Config = Config {
     includes :: [FilePath]
     -- | These language extensions are enabled by default.
     , language :: [Extension.Extension]
-    -- | Format the import block.
-    , showImports :: [Types.ImportLine] -> String
-    -- | Often multiple modules from the package index will match
-    -- a qualification.  Apply some heuristics to pick the most likely one.
-    , pickModule :: FilePath -> [(Maybe Index.Package, Types.ModuleName)]
-        -> Maybe (Maybe Index.Package, Types.ModuleName)
-    }
-
-empty :: Config
-empty = Config
-    { includes = []
-    , language = []
-    , showImports = formatGroups $ Priority
-        { high = []
-        , low = []
-        }
-    , pickModule = makePickModule defaultPriorities
-    }
+    , importPriority :: Priority Types.ModuleName
+    -- | Heuristics to pick the right module.
+    , modulePriority :: Priorities
+    } deriving (Eq, Show)
 
 data Priorities = Priorities {
     -- | Place these packages either first or last in priority.
     prioPackage :: Priority Index.Package
     -- | Place these modules either first or last in priority.
     , prioModule :: Priority Types.ModuleName
-    } deriving (Show)
+    } deriving (Eq, Show)
 
-data Priority a = Priority { high :: [a], low :: [a] } deriving (Show)
+data Priority a = Priority { high :: [a], low :: [a] }
+    deriving (Eq, Show)
+
+empty :: Config
+empty = Config
+    { includes = []
+    , language = []
+    , importPriority = Priority { high = [], low = [] }
+    , modulePriority = defaultPriorities
+    }
+
+-- | Parse .fix-imports file.
+parse :: Text.Text -> (Config, [String])
+parse text = (config, errors)
+    where
+    commas = List.intercalate ", "
+    errors =
+        [ ".fix-imports has unrecognized fields: "
+            ++ commas unknownFields | not (null unknownFields) ]
+        ++ [ ".fix-imports has unknown language extensions: "
+            ++ commas unknownLanguage | not (null unknownLanguage) ]
+    config = empty
+        { includes = get "include"
+        , language = language
+        , importPriority = Priority
+            { high = getModules "import-order-first"
+            , low = getModules "import-order-last"
+            }
+        , modulePriority = Priorities
+            { prioPackage = Priority
+                { high = get "prio-package-high"
+                , low = get "prio-package-low"
+                }
+            , prioModule = Priority
+                { high = getModules "prio-module-high"
+                , low = getModules "prio-module-low"
+                }
+            }
+        }
+    (unknownLanguage, language) = parseLanguage (get "language")
+    unknownFields = Map.keys fields List.\\ valid
+    valid =
+        [ "include"
+        , "import-order-first", "import-order-last"
+        , "prio-package-high", "prio-package-low"
+        , "prio-module-high", "prio-module-low"
+        , "language"
+        ]
+    fields = Map.fromList [(Text.unpack section, map Text.unpack words)
+        | (section, words) <- Index.parseSections text]
+    getModules = map Types.ModuleName . get
+    get k = Map.findWithDefault [] k fields
 
 parseLanguage :: [String] -> ([String], [Extension.Extension])
 parseLanguage = Either.partitionEithers . map parse
@@ -83,10 +119,10 @@ defaultPriorities = Priorities
 -- - local modules to ones from packages
 -- - package modules high or low in 'prioPackage'
 -- - If all else is equal alphabetize so at least the order is predictable.
-makePickModule :: Priorities -> FilePath
+pickModule :: Priorities -> FilePath
     -> [(Maybe Index.Package, Types.ModuleName)]
     -> Maybe (Maybe Index.Package, Types.ModuleName)
-makePickModule prios modulePath candidates =
+pickModule prios modulePath candidates =
     Util.minimumOn (uncurry (prioritize prios modulePath)) $
         -- Don't pick myself!
         filter ((/= Types.pathToModule modulePath) . snd) candidates

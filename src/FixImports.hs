@@ -196,18 +196,21 @@ fixImports config modulePath mod cmts text = do
                 (mbNew ++ mbExisting)
         mkError _ (Just imp) = Right imp
         mkError mod Nothing = Left mod
+    let formattedImports =
+            Config.formatGroups (Config.importPriority config) importLines
     return $ case notFound of
         _ : _ -> Left $ "modules not found: "
             ++ Util.join ", " (map Types.moduleName notFound)
         [] -> Right $ Result
-            (substituteImports (showImports importLines) range text)
-            (Set.fromList (map (Types.importDeclModule . Types.importDecl)
-                (Maybe.catMaybes mbNew)))
-            unusedImports
+            { resultText = substituteImports formattedImports range text
+            , resultAdded = Set.fromList $
+                map (Types.importDeclModule . Types.importDecl) $
+                Maybe.catMaybes mbNew
+            , resultRemoved = unusedImports
+            }
     where
     (newImports, unusedImports, imports, range) = importInfo mod cmts
     toModule (Types.Qualification name) = Types.ModuleName name
-    showImports = Config.showImports config
 
 -- | Clip out the range from the given text and replace it with the given
 -- lines.
@@ -253,8 +256,8 @@ findModule config index modulePath qual = do
     found <- findLocalModules (Config.includes config) qual
     let local = [(Nothing, Types.pathToModule fn) | fn <- found]
         package = map (Arrow.first Just) $ Map.findWithDefault [] qual index
-    -- clunky
-    return $ case Config.pickModule config modulePath (local++package) of
+    let prio = Config.modulePriority config
+    return $ case Config.pickModule prio modulePath (local++package) of
         Just (package, mod) -> Just
             (mod, if package == Nothing then Types.Local else Types.Package)
         Nothing -> Nothing
