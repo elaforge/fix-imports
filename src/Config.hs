@@ -22,8 +22,9 @@ data Config = Config {
     includes :: [FilePath]
     -- | These language extensions are enabled by default.
     , language :: [Extension.Extension]
+    -- | Import sort order.  Used by 'formatGroups'.
     , importPriority :: Priority Types.ModuleName
-    -- | Heuristics to pick the right module.
+    -- | Heuristics to pick the right module.  Used by 'pickModule'.
     , modulePriority :: Priorities
     } deriving (Eq, Show)
 
@@ -153,9 +154,9 @@ localPrio modulePath mod = negate $ length $ takeWhile id $ zipWith (==)
     (Util.split "/" (FilePath.takeDirectory modulePath))
 
 searchPrio :: [String] -> [String] -> String -> Int
-searchPrio high low mod = case List.findIndex (`List.isPrefixOf` mod) high of
+searchPrio high low mod = case List.findIndex (== mod) high of
     Just n -> - length high + n
-    Nothing -> maybe 0 (+1) (List.findIndex (`List.isPrefixOf` mod) low)
+    Nothing -> maybe 0 (+1) (List.findIndex (== mod) low)
 
 
 -- * format imports

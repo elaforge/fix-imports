@@ -4,13 +4,31 @@
   . Maybe it just does first match, not most specific match?
   . Because order only expects toplevel name.
   . I can generalize to longest prefix match.
+  . Supporting .Global means I could put Global modules at the end.
+    Or I could say an unqualified import without a corresponding qualified one
+    goes at the end?
 
-  - even just import-orde-last: Global doesn't seem to work
-
-- putting Data.Map in prio-module-high also makes everything under Data.Map
+* putting Data.Map in prio-module-high also makes everything under Data.Map
   high prio.  Then I get Data.Map.Internal.Debug over Util.Debug.
+  . I could do exact matches, but say Synth. is a shorthand for
+    (Synth|Synth\..*).
+  . Actually why not just always do exact matches for prio-module?
+    I think I did prefixes because I wanted 'prio-module-low: GHC' to not
+    resolve any GHC.* modules.  But surely 'prio-package-low: ghc' handles
+    that?
 
 - Use a cabal sandbox if one is present.
+- use stack if present
+  . I think just:
+    if [ $use_stack ]; then
+        export GHC_PACKAGE_PATH=$(stack path --ghc-package-path)
+        PATH=$(stack path --compiler-bin):$PATH
+    fi
+
+- haskell-src-exts is slow and buggy.  Can I use the ghc parser yet?
+  . ghc-parser package?
+  . But I thought this was tied to the trees that grow changes?
+  . ghc-syntax-highlighter - uses lexer?
 
 / Optionally write a cache of the package db.
   . No need, most time is spent in haskell-src-exts parsing.
