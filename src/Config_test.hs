@@ -11,6 +11,26 @@ import qualified FixImports
 import qualified Types
 
 
+test_parse = do
+    let f = parseConfig
+    equal (Config.importPriority $
+            f ["import-order-first: A", "import-order-last: B"]) $
+        Config.Priority ["A"] ["B"]
+
+test_pickModule = do
+    let f config modulePath candidates = Config.pickModule
+            (Config.modulePriority (parseConfig config))
+            modulePath candidates
+    equal (f [] "X.hs" []) Nothing
+    let localAB = [(Nothing, "A.M"), (Nothing, "B.M")]
+    equal (f [] "X.hs" localAB) $
+        Just (Nothing, "A.M")
+    equal (f ["prio-module-high: B.M"] "X.hs" localAB) $
+        Just (Nothing, "B.M")
+    -- Has to be an exact match.
+    equal (f ["prio-module-high: B"] "X.hs" localAB) $
+        Just (Nothing, "A.M")
+
 test_formatGroups = do
     let f config imports = lines $ Config.formatGroups
             (Config.importPriority (parseConfig config))
@@ -29,29 +49,19 @@ test_formatGroups = do
         , "import A"
         ]
 
-test_pickModule = do
-    let f config modulePath candidates = Config.pickModule
-            (Config.modulePriority (parseConfig config))
-            modulePath candidates
-    equal (f [] "X.hs" []) Nothing
-    let localAB = [(Nothing, "A.M"), (Nothing, "B.M")]
-    equal (f [] "X.hs" localAB) $
-        Just (Nothing, "A.M")
-    equal (f ["prio-module-high: B.M"] "X.hs" localAB) $
-        Just (Nothing, "B.M")
-    -- Has to be an exact match.
-    equal (f ["prio-module-high: B"] "X.hs" localAB) $
-        Just (Nothing, "A.M")
+    -- Exact match.
+    equal (f ["import-order-first: Z"] ["import Z.A", "import A"])
+        [ "import A"
+        , "import Z.A"
+        ]
+    -- Unless it's a prefix match.
+    equal (f ["import-order-first: Z."] ["import Z.A", "import A"])
+        [ "import Z.A"
+        , "import A"
+        ]
 
--- pickModule :: Priorities -> FilePath
---     -> [(Maybe Index.Package, Types.ModuleName)]
---     -> Maybe (Maybe Index.Package, Types.ModuleName)
 
-test_parse = do
-    let f = parseConfig
-    equal (Config.importPriority $
-            f ["import-order-first: A", "import-order-last: B"]) $
-        Config.Priority ["A"] ["B"]
+-- * util
 
 importLine :: Types.ImportDecl -> Types.ImportLine
 importLine decl = Types.ImportLine

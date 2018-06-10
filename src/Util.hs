@@ -21,6 +21,14 @@ import qualified System.Process as Process
 
 -- * list
 
+-- | List initial and final element, if any.
+unsnoc :: [a] -> Maybe ([a], a)
+unsnoc [] = Nothing
+unsnoc (x:xs) = Just $ go x xs
+    where
+    go x [] = ([], x)
+    go x (x':xs) = let (pre, post) = go x' xs in (x:pre, post)
+
 -- | Concat a list with 'sep' in between.
 join :: [a] -> [[a]] -> [a]
 join = List.intercalate

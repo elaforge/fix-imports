@@ -23,7 +23,7 @@ data Config = Config {
     -- | These language extensions are enabled by default.
     , language :: [Extension.Extension]
     -- | Import sort order.  Used by 'formatGroups'.
-    , importPriority :: Priority Types.ModuleName
+    , importPriority :: Priority ModulePattern
     -- | Heuristics to pick the right module.  Used by 'pickModule'.
     , modulePriority :: Priorities
     } deriving (Eq, Show)
@@ -37,6 +37,15 @@ data Priorities = Priorities {
 
 data Priority a = Priority { high :: [a], low :: [a] }
     deriving (Eq, Show)
+
+-- | A simple pattern: @M.@ matches M and M.*.  Anything else matches exactly.
+type ModulePattern = String
+
+matchModule :: ModulePattern -> Types.ModuleName -> Bool
+matchModule pattern (Types.ModuleName mod) = case Util.unsnoc pattern of
+    Nothing -> False
+    Just (parent, '.') -> parent == mod || pattern `List.isPrefixOf` mod
+    _ -> pattern == mod
 
 empty :: Config
 empty = Config
@@ -60,8 +69,8 @@ parse text = (config, errors)
         { includes = get "include"
         , language = language
         , importPriority = Priority
-            { high = getModules "import-order-first"
-            , low = getModules "import-order-last"
+            { high = get "import-order-first"
+            , low = get "import-order-last"
             }
         , modulePriority = Priorities
             { prioPackage = Priority
@@ -137,7 +146,7 @@ prioritize prios modulePath mbPackage mod =
     , Types.moduleName mod
     )
     where
-    packagePrio _ Nothing = (localPrio modulePath mod, 0)
+    packagePrio _ Nothing = (localOrder modulePath mod, 0)
     packagePrio (Priority {high, low}) (Just pkg) =
         (1, searchPrio high low pkg)
     modulePrio (Priority {high, low}) =
@@ -148,8 +157,8 @@ prioritize prios modulePath mbPackage mod =
 -- | Lower numbers for modules that share more prefix with the module's path.
 -- A/B/Z.hs vs A.B.C -> -2
 -- A/Z.hs vs B -> 0
-localPrio :: FilePath -> Types.ModuleName -> Int
-localPrio modulePath mod = negate $ length $ takeWhile id $ zipWith (==)
+localOrder :: FilePath -> Types.ModuleName -> Int
+localOrder modulePath mod = negate $ length $ takeWhile id $ zipWith (==)
     (Util.split "/" (Types.moduleToPath mod))
     (Util.split "/" (FilePath.takeDirectory modulePath))
 
@@ -171,22 +180,22 @@ searchPrio high low mod = case List.findIndex (== mod) high of
 --
 -- An unqualified import will follow a qualified one.  The Prelude, if
 -- imported, always goes first.
-formatGroups :: Priority Types.ModuleName -> [Types.ImportLine] -> String
+formatGroups :: Priority ModulePattern -> [Types.ImportLine] -> String
 formatGroups prio imports =
     unlines $ joinGroups
         [ showGroups (group (Util.sortOn packagePrio package))
         , showGroups (group (Util.sortOn localPrio local))
         ]
     where
-    packagePrio imp =
-        ( name imp /= prelude
-        , name imp
-        , qualifiedPrio imp
+    packagePrio import_ =
+        ( name import_ /= prelude
+        , name import_
+        , qualifiedPrio import_
         )
-    localPrio imp =
-        ( localPriority prio (topModule imp)
-        , name imp
-        , qualifiedPrio imp
+    localPrio import_ =
+        ( localPriority prio (Types.importModule import_)
+        , name import_
+        , qualifiedPrio import_
         )
     qualifiedPrio = not . qualifiedImport
     name = Types.importModule
@@ -206,15 +215,19 @@ formatGroups prio imports =
 
 -- | Modules whose top level element is in 'importFirst' go first, ones in
 -- 'importLast' go last, and the rest go in the middle.
-localPriority :: Priority Types.ModuleName -> String -> (Int, Maybe Int)
-localPriority prio importTop = case List.elemIndex importTop firsts of
-    Just k -> (-1, Just k)
-    Nothing -> case List.elemIndex importTop lasts of
-        Nothing -> (0, Nothing)
-        Just k -> (1, Just k)
+--
+-- Like 'searchPrio' but for order.
+localPriority :: Priority ModulePattern -> Types.ModuleName
+    -> (Int, Maybe Int)
+localPriority prio import_ =
+    case List.findIndex (`matchModule` import_) firsts of
+        Just k -> (-1, Just k)
+        Nothing -> case List.findIndex (`matchModule` import_) lasts of
+            Nothing -> (0, Nothing)
+            Just k -> (1, Just k)
     where
-    firsts = map Types.moduleName (high prio)
-    lasts = map Types.moduleName (low prio)
+    firsts = high prio
+    lasts = low prio
 
 qualifiedImport :: Types.ImportLine -> Bool
 qualifiedImport = Haskell.importQualified . Types.importDecl
