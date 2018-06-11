@@ -1,4 +1,3 @@
-{-# LANGUAGE ScopedTypeVariables #-}
 {- | Automatically fix the import list in a haskell module.
 
     This only really works for qualified names.  The process is as follows:
@@ -38,10 +37,9 @@
 module FixImports where
 import Prelude hiding (mod)
 import Control.Applicative ((<$>))
-import qualified Control.Arrow as Arrow
-import qualified Control.Exception as Exception
 import Control.Monad
 
+import qualified Data.Bifunctor as Bifunctor
 import qualified Data.Char as Char
 import qualified Data.Either as Either
 import qualified Data.Generics.Uniplate.Data as Uniplate
@@ -54,13 +52,9 @@ import qualified Language.Haskell.Exts as Haskell
 import qualified Language.Haskell.Exts.Extension as Extension
 import qualified Language.Preprocessor.Cpphs as Cpphs
 
-import qualified System.Console.GetOpt as GetOpt
 import qualified System.Directory as Directory
-import qualified System.Environment
-import qualified System.Exit
 import qualified System.FilePath as FilePath
 import System.FilePath ((</>))
-import qualified System.IO as IO
 import qualified System.Process as Process
 
 import qualified Config
@@ -68,61 +62,6 @@ import qualified Index
 import qualified Types
 import qualified Util
 
-
-runMain :: Config.Config -> IO ()
-runMain config = do
-    -- I need the module path to search for modules relative to it first.  I
-    -- could figure it out from the parsed module name, but a main module may
-    -- not have a name.
-    (modulePath, (verbose, includes)) <-
-        parseArgs =<< System.Environment.getArgs
-    source <- IO.getContents
-    config <- return $ config
-        { Config.includes = includes ++ Config.includes config }
-    fixed <- fixModule config modulePath source
-        `Exception.catch` (\(exc :: Exception.SomeException) ->
-            return $ Left $ "exception: " ++ show exc)
-    case fixed of
-        Left err -> do
-            IO.putStr source
-            IO.hPutStrLn IO.stderr $ "error: " ++ err
-            System.Exit.exitFailure
-        Right (Result source added removed) -> do
-            IO.putStr source
-            let names = Util.join ", " . map Types.moduleName . Set.toList
-                (addedMsg, removedMsg) = (names added, names removed)
-            when (verbose && (not (null addedMsg) || not (null removedMsg))) $
-                IO.hPutStrLn IO.stderr $ Util.join "; " $ filter (not . null)
-                    [ if null addedMsg then "" else "added: " ++ addedMsg
-                    , if null removedMsg then "" else "removed: " ++ removedMsg
-                    ]
-            System.Exit.exitSuccess
-
-data Flag = Verbose | Include String
-    deriving (Eq, Show)
-
-options :: [GetOpt.OptDescr Flag]
-options =
-    [ GetOpt.Option ['v'] [] (GetOpt.NoArg Verbose)
-        "print added and removed modules on stderr"
-    , GetOpt.Option ['i'] [] (GetOpt.ReqArg Include "path")
-        "add to module include path"
-    ]
-
-usage :: String -> IO a
-usage msg = do
-    name <- System.Environment.getProgName
-    putStr $ GetOpt.usageInfo (msg ++ "\n" ++ name ++ " Module.hs <Module.hs")
-        options
-    System.Exit.exitFailure
-
-parseArgs :: [String] -> IO (String, (Bool, [FilePath]))
-parseArgs args = case GetOpt.getOpt GetOpt.Permute options args of
-    (flags, [modulePath], []) -> return (modulePath, parse flags)
-    (_, [], errs) -> usage $ concat errs
-    _ -> usage "too many args"
-    where parse flags = (Verbose `elem` flags, "." : [p | Include p <- flags])
-    -- Includes always have the current directory first.
 
 data Result = Result {
     resultText :: String
@@ -258,7 +197,10 @@ findModule :: Config.Config -> Index.Index -> FilePath
 findModule config index modulePath qual = do
     found <- findLocalModules (Config.includes config) qual
     let local = [(Nothing, Types.pathToModule fn) | fn <- found]
-        package = map (Arrow.first Just) $ Map.findWithDefault [] qual index
+        package = map (Bifunctor.first Just) $ Map.findWithDefault [] qual index
+    Config.debug config $ "findModule " <> show qual <> ": local " <> show found
+    Config.debug config $ "findModule " <> show qual <> ": package "
+        <> show package
     let prio = Config.modulePriority config
     return $ case Config.pickModule prio modulePath (local++package) of
         Just (package, mod) -> Just

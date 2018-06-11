@@ -1,6 +1,6 @@
 * done; - not done; / decided against
 
-- import-order-last: Synth.Lib.Global doesn't work
+* import-order-last: Synth.Lib.Global doesn't work
   . Maybe it just does first match, not most specific match?
   . Because order only expects toplevel name.
   . I can generalize to longest prefix match.

@@ -35,9 +35,17 @@ executable fix-imports
     main-is: Main.hs
     other-modules: Config, FixImports, Index, Types, Util
     hs-source-dirs: src
-    build-depends: base >= 3 && < 5, containers, directory, filepath, process
+    build-depends:
+        base >= 3 && < 5
+        , containers
+        , directory
+        , filepath
+        , process
         , haskell-src-exts >= 1.16.0
-        , uniplate, split, cpphs, text
+        , uniplate
+        , split
+        , cpphs
+        , text
     ghc-options: -Wall -fno-warn-name-shadowing
 
 test-suite test

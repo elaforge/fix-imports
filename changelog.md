@@ -1,3 +1,8 @@
+- import-order-{first,last} are exact matches, or are prefix matches if they
+have a trailing dot
+
+- prio-module-{high,low} are now exact matches instead of prefix
+
 1.1.0
 
 - Rename import-order to import-order-first, and add import-order-last.
