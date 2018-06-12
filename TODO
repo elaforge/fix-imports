@@ -1,5 +1,16 @@
 * done; - not done; / decided against
 
+- I could have hard-coded one-offs for common unqualified imports,
+  e.g. (</>) -> System.FilePath ((</>))
+  . I'd need to start looking at unqualified symbols, and then I need to know
+    if they are in scope or not.
+
+- Synth.Sampler.Render gets Statistics.Sample instead of local
+  Synth.Sampler.Sample
+  . findModule Qualification "Sample": local ["Synth/Sampler/Sample.hs"]
+    findModule Qualification "Sample":
+      package [(Just "statistics",ModuleName "Statistics.Sample")]
+
 * import-order-last: Synth.Lib.Global doesn't work
   . Maybe it just does first match, not most specific match?
   . Because order only expects toplevel name.
@@ -52,6 +63,8 @@ prioritized above package ones.  To fix this I could have a ad-hoc map of e.g.
     simple?
 
 - If the choice is still ambiguous I could ask interactively.
+  . This requires deeper integration, but vim does have menu selection
+    support.
 
 - Or write a simple tool to analyze existing code and assign priorities
-based on how often each is imported.
+  based on how often each is imported.

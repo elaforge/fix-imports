@@ -10,6 +10,7 @@ import qualified Data.Text as Text
 import qualified Language.Haskell.Exts as Haskell
 import qualified Language.Haskell.Exts.Extension as Extension
 import qualified System.FilePath as FilePath
+import qualified System.IO as IO
 
 import qualified Index
 import qualified Types
@@ -26,6 +27,7 @@ data Config = Config {
     , importPriority :: Priority ModulePattern
     -- | Heuristics to pick the right module.  Used by 'pickModule'.
     , modulePriority :: Priorities
+    , _debug :: Bool
     } deriving (Eq, Show)
 
 data Priorities = Priorities {
@@ -53,6 +55,7 @@ empty = Config
     , language = []
     , importPriority = Priority { high = [], low = [] }
     , modulePriority = defaultPriorities
+    , _debug = False
     }
 
 -- | Parse .fix-imports file.
@@ -244,3 +247,10 @@ showImport (Types.ImportLine imp cmts _) =
         , Haskell.ribbonsPerLine = 1
         }
     mode = Haskell.defaultMode
+
+-- * log
+
+debug :: Config -> String -> IO ()
+debug config msg
+    | _debug config = IO.hPutStrLn IO.stderr msg
+    | otherwise = return ()

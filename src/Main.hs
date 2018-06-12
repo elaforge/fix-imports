@@ -35,10 +35,13 @@ mainConfig config = do
     -- I need the module path to search for modules relative to it first.  I
     -- could figure it out from the parsed module name, but a main module may
     -- not have a name.
-    (modulePath, (verbose, includes)) <- parseArgs =<< Environment.getArgs
+    (modulePath, (verbose, debug, includes)) <-
+        parseArgs =<< Environment.getArgs
     source <- IO.getContents
     config <- return $ config
-        { Config.includes = includes ++ Config.includes config }
+        { Config.includes = includes ++ Config.includes config
+        , Config._debug = debug
+        }
     fixed <- FixImports.fixModule config modulePath source
         `Exception.catch` (\(exc :: Exception.SomeException) ->
             return $ Left $ "exception: " ++ show exc)
@@ -58,15 +61,17 @@ mainConfig config = do
                     ]
             Exit.exitSuccess
 
-data Flag = Verbose | Include String
+data Flag = Debug | Include String | Verbose
     deriving (Eq, Show)
 
 options :: [GetOpt.OptDescr Flag]
 options =
-    [ GetOpt.Option ['v'] [] (GetOpt.NoArg Verbose)
-        "print added and removed modules on stderr"
+    [ GetOpt.Option [] ["debug"] (GetOpt.NoArg Debug)
+        "print debugging info on stderr"
     , GetOpt.Option ['i'] [] (GetOpt.ReqArg Include "path")
         "add to module include path"
+    , GetOpt.Option ['v'] [] (GetOpt.NoArg Verbose)
+        "print added and removed modules on stderr"
     ]
 
 usage :: String -> IO a
@@ -76,10 +81,15 @@ usage msg = do
         options
     Exit.exitFailure
 
-parseArgs :: [String] -> IO (String, (Bool, [FilePath]))
+parseArgs :: [String] -> IO (String, (Bool, Bool, [FilePath]))
 parseArgs args = case GetOpt.getOpt GetOpt.Permute options args of
     (flags, [modulePath], []) -> return (modulePath, parse flags)
     (_, [], errs) -> usage $ concat errs
     _ -> usage "too many args"
-    where parse flags = (Verbose `elem` flags, "." : [p | Include p <- flags])
+    where
+    parse flags =
+        ( Verbose `elem` flags
+        , Debug `elem` flags
+        , "." : [p | Include p <- flags]
+        )
     -- Includes always have the current directory first.

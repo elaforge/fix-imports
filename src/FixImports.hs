@@ -198,9 +198,9 @@ findModule config index modulePath qual = do
     found <- findLocalModules (Config.includes config) qual
     let local = [(Nothing, Types.pathToModule fn) | fn <- found]
         package = map (Bifunctor.first Just) $ Map.findWithDefault [] qual index
-    Config.debug config $ "findModule " <> show qual <> ": local " <> show found
-    Config.debug config $ "findModule " <> show qual <> ": package "
-        <> show package
+    Config.debug config $ "findModule " <> show qual <> " from "
+        <> show modulePath <> ": local " <> show found
+        <> "\npackage: " <> show package
     let prio = Config.modulePriority config
     return $ case Config.pickModule prio modulePath (local++package) of
         Just (package, mod) -> Just
