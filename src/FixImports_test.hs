@@ -1,36 +1,52 @@
--- | Grody hand-testing because I'm too lazy to libraryize the test framework
--- just for this.
 module FixImports_test where
-import qualified Language.Haskell.Exts.Annotated as Haskell
+import Control.Monad (unless, void)
+import qualified Data.Text as Text
+import EL.Test.Global
 
 import qualified Config
-import qualified FixImports
-import qualified Index
-import qualified Types
 
 
-importRange :: String -> Either String (Int, Int)
-importRange modText = do
-    (mod, cmts) <- parse modText
-    return $ FixImports.importRange mod
+test_fixModule = do
+    equal 1 1
 
-cmtsInRange :: String -> Either String [Haskell.Comment]
-cmtsInRange modText = do
-    (mod, cmts) <- parse modText
-    return $ FixImports.filterImportCmts (FixImports.importRange mod) cmts
+    -- let f = FixModule.fixModule
 
-parse :: String -> Either String (Types.Module, [Haskell.Comment])
-parse text = case Haskell.parseFileContentsWithComments mode text of
-    Haskell.ParseFailed srcloc err ->
-        Left $ Haskell.prettyPrint srcloc ++ ": " ++ err
-    Haskell.ParseOk (mod, comments) -> Right (mod, comments)
-    where mode = Haskell.defaultParseMode
+mkConfig :: Text.Text -> Config.Config
+mkConfig content
+    | null errs = config
+    | otherwise = error $ "parsing " <> show content  <> ": " <> unlines errs
+    where (config, errs) = Config.parse content
 
-findModule :: [FilePath] -> FilePath -> String
-    -> IO (Maybe (Types.ModuleName, Bool))
-findModule includes modulePath qual = do
-    index <- Index.loadIndex (Config.configIndex (Config.defaultConfig []))
-    FixImports.findModule includes index modulePath (Types.Qualification qual)
+-- mkConfig = Config.empty
+--     { Config.showImports = Config.formatGroups $ Config.Priority
+--         { high = []
+--         , low = []
+--         }
+--     , Config.pickModule = Config.makePickModule defaultPriorities
+--     }
+
+-- importRange :: String -> Either String (Int, Int)
+-- importRange modText = do
+--     (mod, cmts) <- parse modText
+--     return $ FixImports.importRange mod
+--
+-- cmtsInRange :: String -> Either String [Haskell.Comment]
+-- cmtsInRange modText = do
+--     (mod, cmts) <- parse modText
+--     return $ FixImports.filterImportCmts (FixImports.importRange mod) cmts
+--
+-- parse :: String -> Either String (Types.Module, [Haskell.Comment])
+-- parse text = case Haskell.parseFileContentsWithComments mode text of
+--     Haskell.ParseFailed srcloc err ->
+--         Left $ Haskell.prettyPrint srcloc ++ ": " ++ err
+--     Haskell.ParseOk (mod, comments) -> Right (mod, comments)
+--     where mode = Haskell.defaultParseMode
+--
+-- findModule :: [FilePath] -> FilePath -> String
+--     -> IO (Maybe (Types.ModuleName, Bool))
+-- findModule includes modulePath qual = do
+--     index <- Index.loadIndex (Config.configIndex (Config.defaultConfig []))
+--     FixImports.findModule includes index modulePath (Types.Qualification qual)
 
 -- TODO quasi-quoting has a nicer way for multi-line strings, right?
 tmod0 = "-- cmt1\n\

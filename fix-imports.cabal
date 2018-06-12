@@ -55,12 +55,23 @@ test-suite test
     main-is: RunTests.hs
     default-language: Haskell2010
     build-depends:
-        base
+        base >= 3 && < 5
+        , containers
+        , directory
+        , filepath
+        , process
+        , haskell-src-exts >= 1.16.0
+        , uniplate
+        , split
+        , cpphs
+        , text
+
         , test-karya
     other-modules:
         Config
         Config_test
         FixImports
+        FixImports_test
         Index
         Types
         Util
