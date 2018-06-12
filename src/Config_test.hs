@@ -31,6 +31,18 @@ test_pickModule = do
     equal (f ["prio-module-high: B"] "X.hs" localAB) $
         Just (Nothing, "A.M")
 
+    -- Local modules take precedence.
+    equal (f [] "A/B.hs" [(Nothing, "B.M"), (Just "pkg", "B.M")]) $
+        Just (Nothing, "B.M")
+    equal (f [] "A/B/C.hs" [(Nothing, "A.B.M"), (Just "pkg", "B.M")]) $
+        Just (Nothing, "A.B.M")
+    -- Closer local modules precede further ones.
+    equal (f [] "A/B/C.hs" [(Nothing, "A.B.M"), (Nothing, "A.M")]) $
+        Just (Nothing, "A.B.M")
+    -- Prefer fewer dots.
+    equal (f [] "X.hs" [(Just "p1", "A.B.M"), (Just "p2", "Z.M")]) $
+        Just (Just "p2", "Z.M")
+
 test_formatGroups = do
     let f config imports = lines $ Config.formatGroups
             (Config.importPriority (parseConfig config))

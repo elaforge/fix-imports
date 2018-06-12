@@ -1,6 +1,7 @@
 -- | Per-project 'Config' and functions to interpret it.
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PartialTypeSignatures #-} -- sort keys only care about Ord
 module Config where
 import qualified Data.Either as Either
 import qualified Data.List as List
@@ -126,13 +127,6 @@ defaultPriorities = Priorities
 
 -- * pick candidates
 
--- | The order of priority is:
---
--- - high or low in 'prioModule'
--- - local modules that share prefix with the module path
--- - local modules to ones from packages
--- - package modules high or low in 'prioPackage'
--- - If all else is equal alphabetize so at least the order is predictable.
 pickModule :: Priorities -> FilePath
     -> [(Maybe Index.Package, Types.ModuleName)]
     -> Maybe (Maybe Index.Package, Types.ModuleName)
@@ -141,21 +135,41 @@ pickModule prios modulePath candidates =
         -- Don't pick myself!
         filter ((/= Types.pathToModule modulePath) . snd) candidates
 
-prioritize :: Priorities -> FilePath -> Maybe String -> Types.ModuleName
-    -> ((Int, Int), (Int, Int), String)
+-- | The order of priority is:
+--
+-- - high or low in 'prioModule'
+-- - local modules that share prefix with the module path
+-- - local modules to ones from packages
+-- - package modules high or low in 'prioPackage'
+-- - prefer with fewer dots, so System.IO over Data.Text.IO
+-- - If all else is equal alphabetize so at least the order is predictable.
+prioritize :: Priorities -> FilePath -> Maybe String -> Types.ModuleName -> _
 prioritize prios modulePath mbPackage mod =
-    ( (modulePrio (prioModule prios) mod, dots mod)
+    ( modulePrio (prioModule prios) mod
+    , localPrio mbPackage
     , packagePrio (prioPackage prios) mbPackage
+    , length $ filter (=='.') $ Types.moduleName mod
     , Types.moduleName mod
     )
     where
-    packagePrio _ Nothing = (localOrder modulePath mod, 0)
+    localPrio Nothing = Before $ localOrder modulePath mod
+    localPrio (Just _) = After
+
+    packagePrio _ Nothing = Nothing
     packagePrio (Priority {high, low}) (Just pkg) =
-        (1, searchPrio high low pkg)
+        Just $ searchPrio high low pkg
     modulePrio (Priority {high, low}) =
         searchPrio (map Types.moduleName high) (map Types.moduleName low)
         . Types.moduleName
-    dots = length . filter (=='.') . Types.moduleName
+
+-- | This is like Maybe, except that a present value will always sort before an
+-- absent one.
+data Before a = Before a | After deriving (Eq, Show)
+instance Ord a => Ord (Before a) where
+    compare After After = EQ
+    compare (Before _) After = LT
+    compare After (Before _) = GT
+    compare (Before a) (Before b) = compare a b
 
 -- | Lower numbers for modules that share more prefix with the module's path.
 -- A/B/Z.hs vs A.B.C -> -2

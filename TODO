@@ -5,7 +5,7 @@
   . I'd need to start looking at unqualified symbols, and then I need to know
     if they are in scope or not.
 
-- Synth.Sampler.Render gets Statistics.Sample instead of local
+* Synth.Sampler.Render gets Statistics.Sample instead of local
   Synth.Sampler.Sample
   . findModule Qualification "Sample": local ["Synth/Sampler/Sample.hs"]
     findModule Qualification "Sample":
