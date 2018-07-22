@@ -13,7 +13,7 @@ import qualified Types
 
 test_parse = do
     let f = parseConfig
-    equal (Config.importPriority $
+    equal (Config.importOrder $
             f ["import-order-first: A", "import-order-last: B"]) $
         Config.Priority ["A"] ["B"]
 
@@ -45,31 +45,49 @@ test_pickModule = do
 
 test_formatGroups = do
     let f config imports = lines $ Config.formatGroups
-            (Config.importPriority (parseConfig config))
+            (Config.importOrder (parseConfig config))
             (Testing.expectRight (parse (unlines imports)))
     equal (f [] []) []
-    equal (f [] ["import Z", "import A"])
-        [ "import A"
+    -- Unqualified import-all goes last.
+    equal (f []
+            [ "import Z", "import A"
+            , "import qualified C", "import qualified B"
+            , "import C (a)"
+            ])
+        [ "import qualified B"
+        , "import qualified C"
+        , "import C (a)"
+        , ""
+        , "import A"
         , "import Z"
         ]
-    equal (f ["import-order-first: Z"] ["import Z", "import A"])
-        [ "import Z"
-        , "import A"
+
+    equal (f [] ["import qualified Z", "import qualified A"])
+        [ "import qualified A"
+        , "import qualified Z"
         ]
-    equal (f ["import-order-last: A"] ["import Z", "import A"])
-        [ "import Z"
-        , "import A"
+    equal (f ["import-order-first: Z"]
+            ["import qualified Z", "import qualified A"])
+        [ "import qualified Z"
+        , "import qualified A"
+        ]
+    equal (f ["import-order-last: A"]
+            ["import qualified Z", "import qualified A"])
+        [ "import qualified Z"
+        , "import qualified A"
         ]
 
     -- Exact match.
-    equal (f ["import-order-first: Z"] ["import Z.A", "import A"])
-        [ "import A"
-        , "import Z.A"
+    equal (f ["import-order-first: Z"]
+            ["import qualified Z.A", "import qualified A"])
+        [ "import qualified A"
+        , "import qualified Z.A"
         ]
     -- Unless it's a prefix match.
-    equal (f ["import-order-first: Z."] ["import Z.A", "import A"])
-        [ "import Z.A"
-        , "import A"
+    equal (f ["import-order-first: Z."]
+            ["import qualified Z.A", "import qualified A"])
+        [ "import qualified Z.A"
+        , "import qualified A"
         ]
 
 
@@ -86,10 +104,8 @@ parse :: String -> Either String [Types.ImportLine]
 parse source = case FixImports.parse [] "" source of
     Haskell.ParseFailed srcloc err ->
         Left $ Haskell.prettyPrint srcloc ++ ": " ++ err
-    Haskell.ParseOk (mod, cmts) -> Right $ map (importLine . fst) imports
-        where
-        (_newImports, _unusedImports, imports, _range) =
-            FixImports.importInfo mod cmts
+    Haskell.ParseOk (mod, _cmts) ->
+        Right $ map importLine $ FixImports.moduleImportDecls mod
 
 parseConfig :: [Text.Text] -> Config.Config
 parseConfig lines

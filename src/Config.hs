@@ -6,6 +6,7 @@ module Config where
 import qualified Data.Either as Either
 import qualified Data.List as List
 import qualified Data.Map as Map
+import qualified Data.Maybe as Maybe
 import qualified Data.Text as Text
 
 import qualified Language.Haskell.Exts as Haskell
@@ -25,11 +26,16 @@ data Config = Config {
     -- | These language extensions are enabled by default.
     , language :: [Extension.Extension]
     -- | Import sort order.  Used by 'formatGroups'.
-    , importPriority :: Priority ModulePattern
+    , importOrder :: Priority ModulePattern
     -- | Heuristics to pick the right module.  Used by 'pickModule'.
     , modulePriority :: Priorities
     , _debug :: Bool
     } deriving (Eq, Show)
+
+-- | Put unqualified import-all imports last.
+-- TODO configure at runtime
+sortUnqualifiedLast :: Bool
+sortUnqualifiedLast = True
 
 data Priorities = Priorities {
     -- | Place these packages either first or last in priority.
@@ -54,7 +60,7 @@ empty :: Config
 empty = Config
     { includes = []
     , language = []
-    , importPriority = Priority { high = [], low = [] }
+    , importOrder = Priority { high = [], low = [] }
     , modulePriority = defaultPriorities
     , _debug = False
     }
@@ -72,7 +78,7 @@ parse text = (config, errors)
     config = empty
         { includes = get "include"
         , language = language
-        , importPriority = Priority
+        , importOrder = Priority
             { high = get "import-order-first"
             , low = get "import-order-last"
             }
@@ -202,6 +208,7 @@ formatGroups prio imports =
     unlines $ joinGroups
         [ showGroups (group (Util.sortOn packagePrio package))
         , showGroups (group (Util.sortOn localPrio local))
+        , showGroups [Util.sortOn name unqualified]
         ]
     where
     packagePrio import_ =
@@ -216,8 +223,12 @@ formatGroups prio imports =
         )
     qualifiedPrio = not . qualifiedImport
     name = Types.importModule
-    (local, package) =
-        List.partition ((==Types.Local) . Types.importSource) imports
+    (unqualified, local, package) = Util.partition2
+        ((sortUnqualifiedLast &&) . isUnqualified . Types.importDecl)
+        ((==Types.Local) . Types.importSource)
+        imports
+    -- (local, package) =
+    --     List.partition ((==Types.Local) . Types.importSource) imports
     group = collapse . Util.groupOn topModule
     topModule = takeWhile (/='.') . Types.moduleName . Types.importModule
     collapse [] = []
@@ -229,6 +240,10 @@ formatGroups prio imports =
     showGroups = List.intercalate [""] . map (map showImport)
     joinGroups = List.intercalate [""] . filter (not . null)
     prelude = Types.ModuleName "Prelude"
+
+isUnqualified :: Haskell.ImportDecl a -> Bool
+isUnqualified imp = not (Haskell.importQualified imp)
+    && Maybe.isNothing (Haskell.importSpecs imp)
 
 -- | Modules whose top level element is in 'importFirst' go first, ones in
 -- 'importLast' go last, and the rest go in the middle.

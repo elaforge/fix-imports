@@ -61,6 +61,13 @@ minimumOn _ [] = Nothing
 minimumOn key xs = Just (List.foldl1' f xs)
     where f low x = if key x < key low then x else low
 
+-- | Like 'List.partition', but partition by two functions consecutively.
+partition2 :: (a -> Bool) -> (a -> Bool) -> [a] -> ([a], [a], [a])
+partition2 f1 f2 xs = (as, bs, xs3)
+    where
+    (as, xs2) = List.partition f1 xs
+    (bs, xs3) = List.partition f2 xs2
+
 -- * control
 
 ifM :: (Monad m) => m Bool -> m a -> m a -> m a

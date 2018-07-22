@@ -139,7 +139,7 @@ fixImports config modulePath mod cmts source = do
         mkError _ (Just imp) = Right imp
         mkError mod Nothing = Left mod
     let formattedImports =
-            Config.formatGroups (Config.importPriority config) importLines
+            Config.formatGroups (Config.importOrder config) importLines
     return $ case notFound of
         _ : _ -> Left $ "modules not found: "
             ++ Util.join ", " (map Types.moduleName notFound)
@@ -288,8 +288,9 @@ importInfo mod cmts = (missing, unused, declCmts, range)
     used = Set.fromList (moduleQNames mod)
     imports = moduleImportDecls mod
     declCmts =
-        [ imp | imp@(decl, _)
-        <- associateComments imports (filterImportCmts range cmts)
+        [ imp
+        | imp@(decl, _) <- associateComments imports
+            (filterImportCmts range cmts)
         , keepImport decl
         ]
     -- Keep unqualified imports, but only keep qualified ones if they are used.
