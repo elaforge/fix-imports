@@ -22,13 +22,13 @@ import qualified Util
 data Config = Config {
     -- | Additional directories to search for local modules.  Taken from the
     -- -i flag and 'include' config line.
-    includes :: [FilePath]
+    _includes :: [FilePath]
     -- | These language extensions are enabled by default.
-    , language :: [Extension.Extension]
+    , _language :: [Extension.Extension]
     -- | Import sort order.  Used by 'formatGroups'.
-    , importOrder :: Priority ModulePattern
+    , _importOrder :: Priority ModulePattern
     -- | Heuristics to pick the right module.  Used by 'pickModule'.
-    , modulePriority :: Priorities
+    , _modulePriority :: Priorities
     , _debug :: Bool
     } deriving (Eq, Show)
 
@@ -58,10 +58,10 @@ matchModule pattern (Types.ModuleName mod) = case Util.unsnoc pattern of
 
 empty :: Config
 empty = Config
-    { includes = []
-    , language = []
-    , importOrder = Priority { high = [], low = [] }
-    , modulePriority = defaultPriorities
+    { _includes = []
+    , _language = []
+    , _importOrder = Priority { high = [], low = [] }
+    , _modulePriority = defaultPriorities
     , _debug = False
     }
 
@@ -76,13 +76,13 @@ parse text = (config, errors)
         ++ [ ".fix-imports has unknown language extensions: "
             ++ commas unknownLanguage | not (null unknownLanguage) ]
     config = empty
-        { includes = get "include"
-        , language = language
-        , importOrder = Priority
+        { _includes = get "include"
+        , _language = language
+        , _importOrder = Priority
             { high = get "import-order-first"
             , low = get "import-order-last"
             }
-        , modulePriority = Priorities
+        , _modulePriority = Priorities
             { prioPackage = Priority
                 { high = get "prio-package-high"
                 , low = get "prio-package-low"

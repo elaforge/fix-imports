@@ -72,7 +72,7 @@ data Result = Result {
 fixModule :: Config.Config -> FilePath -> String -> IO (Either String Result)
 fixModule config modulePath source = do
     processedSource <- cppModule modulePath source
-    case parse (Config.language config) modulePath processedSource of
+    case parse (Config._language config) modulePath processedSource of
         Haskell.ParseFailed srcloc err ->
             return $ Left $ Haskell.prettyPrint srcloc ++ ": " ++ err
         Haskell.ParseOk (mod, cmts) ->
@@ -130,7 +130,7 @@ fixImports config modulePath mod cmts source = do
     -- I guess Data.Binary's laziness will serve me there
     index <- if Set.null newImports then return Index.empty else Index.load
     mbNew <- mapM (mkImportLine config modulePath index) (Set.toList newImports)
-    mbExisting <- mapM (findImport (Config.includes config)) imports
+    mbExisting <- mapM (findImport (Config._includes config)) imports
     let existing = map (Types.importDeclModule . fst) imports
     let (notFound, importLines) = Either.partitionEithers $
             zipWith mkError
@@ -139,7 +139,7 @@ fixImports config modulePath mod cmts source = do
         mkError _ (Just imp) = Right imp
         mkError mod Nothing = Left mod
     let formattedImports =
-            Config.formatGroups (Config.importOrder config) importLines
+            Config.formatGroups (Config._importOrder config) importLines
     return $ case notFound of
         _ : _ -> Left $ "modules not found: "
             ++ Util.join ", " (map Types.moduleName notFound)
@@ -195,13 +195,13 @@ findModule :: Config.Config -> Index.Index -> FilePath
     -- ^ Path to the module being fixed.
     -> Types.Qualification -> IO (Maybe (Types.ModuleName, Types.Source))
 findModule config index modulePath qual = do
-    found <- findLocalModules (Config.includes config) qual
+    found <- findLocalModules (Config._includes config) qual
     let local = [(Nothing, Types.pathToModule fn) | fn <- found]
         package = map (Bifunctor.first Just) $ Map.findWithDefault [] qual index
     Config.debug config $ "findModule " <> show qual <> " from "
         <> show modulePath <> ": local " <> show found
         <> "\npackage: " <> show package
-    let prio = Config.modulePriority config
+    let prio = Config._modulePriority config
     return $ case Config.pickModule prio modulePath (local++package) of
         Just (package, mod) -> Just
             (mod, if package == Nothing then Types.Local else Types.Package)

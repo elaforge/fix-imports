@@ -39,7 +39,7 @@ mainConfig config = do
         parseArgs =<< Environment.getArgs
     source <- IO.getContents
     config <- return $ config
-        { Config.includes = includes ++ Config.includes config
+        { Config._includes = includes ++ Config._includes config
         , Config._debug = debug
         }
     fixed <- FixImports.fixModule config modulePath source
