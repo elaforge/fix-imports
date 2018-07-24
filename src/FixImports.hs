@@ -139,7 +139,7 @@ fixImports config modulePath mod cmts source = do
         mkError _ (Just imp) = Right imp
         mkError mod Nothing = Left mod
     let formattedImports =
-            Config.formatGroups (Config._importOrder config) importLines
+            Config.formatGroups (Config._order config) importLines
     return $ case notFound of
         _ : _ -> Left $ "modules not found: "
             ++ Util.join ", " (map Types.moduleName notFound)

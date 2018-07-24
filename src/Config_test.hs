@@ -13,9 +13,12 @@ import qualified Types
 
 test_parse = do
     let f = parseConfig
-    equal (Config._importOrder $
+    equal (Config._order $
             f ["import-order-first: A", "import-order-last: B"]) $
-        Config.Priority ["A"] ["B"]
+        Config.Order
+            { _importOrder = Config.Priority ["A"] ["B"]
+            , _sortUnqualifiedLast = False
+            }
 
 test_pickModule = do
     let f config modulePath candidates = Config.pickModule
@@ -45,7 +48,7 @@ test_pickModule = do
 
 test_formatGroups = do
     let f config imports = lines $ Config.formatGroups
-            (Config._importOrder (parseConfig config))
+            (Config._order (parseConfig config))
             (Testing.expectRight (parse (unlines imports)))
     equal (f [] []) []
     -- Unqualified import-all goes last.

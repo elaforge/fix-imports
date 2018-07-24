@@ -26,16 +26,17 @@ data Config = Config {
     -- | These language extensions are enabled by default.
     , _language :: [Extension.Extension]
     -- | Import sort order.  Used by 'formatGroups'.
-    , _importOrder :: Priority ModulePattern
+    , _order :: Order
     -- | Heuristics to pick the right module.  Used by 'pickModule'.
     , _modulePriority :: Priorities
     , _debug :: Bool
     } deriving (Eq, Show)
 
--- | Put unqualified import-all imports last.
--- TODO configure at runtime
-sortUnqualifiedLast :: Bool
-sortUnqualifiedLast = True
+data Order = Order {
+    _importOrder :: Priority ModulePattern
+    -- | Put unqualified import-all imports last.
+    , _sortUnqualifiedLast :: Bool
+    } deriving (Eq, Show)
 
 data Priorities = Priorities {
     -- | Place these packages either first or last in priority.
@@ -60,7 +61,10 @@ empty :: Config
 empty = Config
     { _includes = []
     , _language = []
-    , _importOrder = Priority { high = [], low = [] }
+    , _order = Order
+        { _importOrder = Priority { high = [], low = [] }
+        , _sortUnqualifiedLast = False
+        }
     , _modulePriority = defaultPriorities
     , _debug = False
     }
@@ -78,9 +82,12 @@ parse text = (config, errors)
     config = empty
         { _includes = get "include"
         , _language = language
-        , _importOrder = Priority
-            { high = get "import-order-first"
-            , low = get "import-order-last"
+        , _order = Order
+            { _importOrder = Priority
+                { high = get "import-order-first"
+                , low = get "import-order-last"
+                }
+            , _sortUnqualifiedLast = getBool "sort-unqualified-last"
             }
         , _modulePriority = Priorities
             { prioPackage = Priority
@@ -97,15 +104,17 @@ parse text = (config, errors)
     unknownFields = Map.keys fields List.\\ valid
     valid =
         [ "include"
+        , "language"
         , "import-order-first", "import-order-last"
         , "prio-package-high", "prio-package-low"
         , "prio-module-high", "prio-module-low"
-        , "language"
+        , "sort-unqualified-last"
         ]
     fields = Map.fromList [(Text.unpack section, map Text.unpack words)
         | (section, words) <- Index.parseSections text]
     getModules = map Types.ModuleName . get
     get k = Map.findWithDefault [] k fields
+    getBool k = k `Map.member` fields
 
 parseLanguage :: [String] -> ([String], [Extension.Extension])
 parseLanguage = Either.partitionEithers . map parse
@@ -203,8 +212,8 @@ searchPrio high low mod = case List.findIndex (== mod) high of
 --
 -- An unqualified import will follow a qualified one.  The Prelude, if
 -- imported, always goes first.
-formatGroups :: Priority ModulePattern -> [Types.ImportLine] -> String
-formatGroups prio imports =
+formatGroups :: Order -> [Types.ImportLine] -> String
+formatGroups order imports =
     unlines $ joinGroups
         [ showGroups (group (Util.sortOn packagePrio package))
         , showGroups (group (Util.sortOn localPrio local))
@@ -217,14 +226,14 @@ formatGroups prio imports =
         , qualifiedPrio import_
         )
     localPrio import_ =
-        ( localPriority prio (Types.importModule import_)
+        ( localPriority (_importOrder order) (Types.importModule import_)
         , name import_
         , qualifiedPrio import_
         )
     qualifiedPrio = not . qualifiedImport
     name = Types.importModule
     (unqualified, local, package) = Util.partition2
-        ((sortUnqualifiedLast &&) . isUnqualified . Types.importDecl)
+        ((_sortUnqualifiedLast order &&) . isUnqualified . Types.importDecl)
         ((==Types.Local) . Types.importSource)
         imports
     -- (local, package) =
