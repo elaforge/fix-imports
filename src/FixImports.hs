@@ -34,11 +34,11 @@
         first dot).  Small groups are combined.  They go in alphabetical order
         by default, but a per-project order may be defined.
 -}
+{-# LANGUAGE OverloadedStrings #-}
 module FixImports where
 import Prelude hiding (mod)
 import Control.Applicative ((<$>))
 import Control.Monad
-
 import qualified Data.Bifunctor as Bifunctor
 import qualified Data.Char as Char
 import qualified Data.Either as Either
@@ -47,11 +47,15 @@ import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
 import qualified Data.Set as Set
+import qualified Data.Text as Text
+import Data.Text (Text)
+import qualified Data.Time.Clock as Clock
 
 import qualified Language.Haskell.Exts as Haskell
 import qualified Language.Haskell.Exts.Extension as Extension
 import qualified Language.Preprocessor.Cpphs as Cpphs
 
+import qualified Numeric
 import qualified System.Directory as Directory
 import qualified System.FilePath as FilePath
 import System.FilePath ((</>))
@@ -67,16 +71,26 @@ data Result = Result {
     resultText :: String
     , resultAdded :: Set.Set Types.ModuleName
     , resultRemoved :: Set.Set Types.ModuleName
+    , resultMetrics :: [Metric]
     } deriving (Show)
+
+type Metric = (Clock.UTCTime, Text)
+
+addMetrics :: [Metric] -> Result -> Result
+addMetrics ms result = result { resultMetrics = ms ++ resultMetrics result }
 
 fixModule :: Config.Config -> FilePath -> String -> IO (Either String Result)
 fixModule config modulePath source = do
+    mStart <- metric "start"
     processedSource <- cppModule modulePath source
+    mCpp <- metric "cpp"
     case parse (Config._language config) modulePath processedSource of
         Haskell.ParseFailed srcloc err ->
             return $ Left $ Haskell.prettyPrint srcloc ++ ": " ++ err
-        Haskell.ParseOk (mod, cmts) ->
-            fixImports config modulePath mod cmts source
+        Haskell.ParseOk (mod, cmts) -> do
+            mParse <- mod `seq` cmts `seq` metric "parse"
+            fmap (addMetrics [mStart, mCpp, mParse]) <$>
+                fixImports config modulePath mod cmts source
 
 parse :: [Extension.Extension] -> FilePath -> String
     -> Haskell.ParseResult
@@ -128,9 +142,15 @@ fixImports config modulePath mod cmts source = do
     -- Don't bother loading the index if I'm not going to use it.
     -- TODO actually, only load it if I don't find local imports
     -- I guess Data.Binary's laziness will serve me there
+    mProcess <- newImports `seq` unusedImports `seq` imports `seq` range
+        `seq` metric "process"
     index <- if Set.null newImports then return Index.empty else Index.load
+    mLoad <- metric "load-index"
+
     mbNew <- mapM (mkImportLine config modulePath index) (Set.toList newImports)
+    mNewImports <- metric "find-new-imports"
     mbExisting <- mapM (findImport (Config._includes config)) imports
+    mExistingImports <- metric "find-existing-imports"
     let existing = map (Types.importDeclModule . fst) imports
     let (notFound, importLines) = Either.partitionEithers $
             zipWith mkError
@@ -149,6 +169,7 @@ fixImports config modulePath mod cmts source = do
                 map (Types.importDeclModule . Types.importDecl) $
                 Maybe.catMaybes mbNew
             , resultRemoved = unusedImports
+            , resultMetrics = [mProcess, mLoad, mNewImports, mExistingImports]
             }
     where
     (newImports, unusedImports, imports, range) = importInfo mod cmts
@@ -198,9 +219,9 @@ findModule config index modulePath qual = do
     found <- findLocalModules (Config._includes config) qual
     let local = [(Nothing, Types.pathToModule fn) | fn <- found]
         package = map (Bifunctor.first Just) $ Map.findWithDefault [] qual index
-    Config.debug config $ "findModule " <> show qual <> " from "
-        <> show modulePath <> ": local " <> show found
-        <> "\npackage: " <> show package
+    Config.debug config $ "findModule " <> showt qual <> " from "
+        <> showt modulePath <> ": local " <> showt found
+        <> "\npackage: " <> showt package
     let prio = Config._modulePriority config
     return $ case Config.pickModule prio modulePath (local++package) of
         Just (package, mod) -> Just
@@ -370,5 +391,39 @@ importRange mod = case mod of
 
 -- | Uniplate is rad.
 moduleQNames :: Types.Module -> [Types.Qualification]
-moduleQNames mod = [Types.moduleToQualification m
-    | Haskell.Qual _ m _ <- Uniplate.universeBi mod]
+moduleQNames mod =
+    [Types.moduleToQualification m
+    |  Haskell.Qual _ m _ <- Uniplate.universeBi mod
+    ]
+
+-- * metrics
+
+metric :: Text -> IO Metric
+metric name = flip (,) name <$> Clock.getCurrentTime
+
+showMetrics :: [Metric] -> Text
+showMetrics = Text.unlines . format -- . filter ((>0.01) . snd)
+    . map diff . Util.zipPrev . Util.sortOn fst
+    where
+    format metricDurs =
+        map (format1 total) (metricDurs ++ [("total", total)])
+        where total = sum (map snd metricDurs)
+    format1 total (metric, dur) = Text.unwords
+        [ justifyR 8 (showDuration dur)
+        , justifyR 3 (percent (realToFrac dur / realToFrac total))
+        , "-", metric
+        ]
+    diff ((prev, _), (cur, metric)) =
+        (metric, cur `Clock.diffUTCTime` prev)
+
+percent :: Double -> Text
+percent = (<>"%") . showt . round . (*100)
+
+showDuration :: Clock.NominalDiffTime -> Text
+showDuration = Text.pack . ($"s") . Numeric.showFFloat (Just 2) . realToFrac
+
+justifyR :: Int -> Text -> Text
+justifyR width = Text.justifyRight width ' '
+
+showt :: Show a => a -> Text
+showt = Text.pack . show

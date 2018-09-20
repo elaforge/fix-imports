@@ -49,8 +49,11 @@ parseDump :: Text -> ([String], Index)
 parseDump text = (errors, index)
     where
     index = Map.fromListWith (++)
-        [(qual, [(T.unpack package, mod)]) | (package, modules) <- packages,
-            mod <- modules, qual <- moduleQualifications mod]
+        [ (qual, [(T.unpack package, mod)])
+        | (package, modules) <- packages
+        , mod <- modules
+        , qual <- moduleQualifications mod
+        ]
     (errors, packages) = Either.partitionEithers $
         extractSections (parseSections text)
 
@@ -58,8 +61,10 @@ extractSections :: [(Text, [Text])]
     -> [Either String (Text, [Types.ModuleName])]
 extractSections = Maybe.mapMaybe extract . Util.splitWith ((=="name") . fst)
     where
-    extract [("name", [name]), ("exposed", [exposed]),
-            ("exposed-modules", modules)]
+    extract [ ("name", [name])
+            , ("exposed", [exposed])
+            , ("exposed-modules", modules)
+            ]
         | exposed /= "True" = Nothing
         | otherwise = Just $
             Right (name, map (Types.ModuleName . T.unpack) modules)

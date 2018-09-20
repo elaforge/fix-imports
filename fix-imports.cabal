@@ -39,14 +39,15 @@ executable fix-imports
     build-depends:
         base >= 3 && < 5
         , containers
+        , cpphs
         , directory
         , filepath
-        , process
         , haskell-src-exts >= 1.16.0
-        , uniplate
+        , process
         , split
-        , cpphs
         , text
+        , time
+        , uniplate
     ghc-options: -Wall -fno-warn-name-shadowing
 
 test-suite test
@@ -57,14 +58,15 @@ test-suite test
     build-depends:
         base >= 3 && < 5
         , containers
+        , cpphs
         , directory
         , filepath
-        , process
         , haskell-src-exts >= 1.16.0
-        , uniplate
+        , process
         , split
-        , cpphs
         , text
+        , time
+        , uniplate
 
         , test-karya
     other-modules:

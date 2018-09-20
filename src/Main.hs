@@ -3,12 +3,15 @@
 --
 -- More documentation in "FixImports".
 {-# LANGUAGE DisambiguateRecordFields #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 module Main where
 import qualified Control.Exception as Exception
 import Control.Monad (when)
 import qualified Data.Set as Set
+import qualified Data.Text as Text
 import qualified Data.Text.IO as Text.IO
+
 import qualified System.Console.GetOpt as GetOpt
 import qualified System.Environment as Environment
 import qualified System.Exit as Exit
@@ -50,10 +53,13 @@ mainConfig config = do
             IO.putStr source
             IO.hPutStrLn IO.stderr $ "error: " ++ err
             Exit.exitFailure
-        Right (FixImports.Result source added removed) -> do
+        Right (FixImports.Result source added removed metrics) -> do
             IO.putStr source
             let names = Util.join ", " . map Types.moduleName . Set.toList
                 (addedMsg, removedMsg) = (names added, names removed)
+            done <- FixImports.metric "done"
+            Config.debug config $ Text.stripEnd $
+                FixImports.showMetrics (done : metrics)
             when (verbose && (not (null addedMsg) || not (null removedMsg))) $
                 IO.hPutStrLn IO.stderr $ Util.join "; " $ filter (not . null)
                     [ if null addedMsg then "" else "added: " ++ addedMsg

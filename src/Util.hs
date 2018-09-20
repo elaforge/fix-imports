@@ -68,6 +68,9 @@ partition2 f1 f2 xs = (as, bs, xs3)
     (as, xs2) = List.partition f1 xs
     (bs, xs3) = List.partition f2 xs2
 
+zipPrev :: [a] -> [(a, a)]
+zipPrev xs = zip xs (drop 1 xs)
+
 -- * control
 
 ifM :: (Monad m) => m Bool -> m a -> m a -> m a

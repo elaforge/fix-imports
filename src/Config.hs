@@ -8,6 +8,7 @@ import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
 import qualified Data.Text as Text
+import qualified Data.Text.IO as Text.IO
 
 import qualified Language.Haskell.Exts as Haskell
 import qualified Language.Haskell.Exts.Extension as Extension
@@ -288,7 +289,7 @@ showImport (Types.ImportLine imp cmts _) =
 
 -- * log
 
-debug :: Config -> String -> IO ()
+debug :: Config -> Text.Text -> IO ()
 debug config msg
-    | _debug config = IO.hPutStrLn IO.stderr msg
+    | _debug config = Text.IO.hPutStrLn IO.stderr msg
     | otherwise = return ()
