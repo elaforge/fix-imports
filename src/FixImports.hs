@@ -144,12 +144,12 @@ fixImports config modulePath mod cmts source = do
     -- I guess Data.Binary's laziness will serve me there
     mProcess <- newImports `seq` unusedImports `seq` imports `seq` range
         `seq` metric "process"
-    index <- if Set.null newImports then return Index.empty else Index.load
+    index <- Index.load
     mLoad <- metric "load-index"
 
     mbNew <- mapM (mkImportLine config modulePath index) (Set.toList newImports)
     mNewImports <- metric "find-new-imports"
-    mbExisting <- mapM (findImport (Config._includes config)) imports
+    mbExisting <- mapM (findImport index (Config._includes config)) imports
     mExistingImports <- metric "find-existing-imports"
     let existing = map (Types.importDeclModule . fst) imports
     let (notFound, importLines) = Either.partitionEithers $
@@ -261,31 +261,32 @@ findFiles depth file dir = do
 
 -- | Make an existing import into an ImportLine by finding out if it's a local
 -- module or a package module.
-findImport :: [FilePath] -> (Types.ImportDecl, [Types.Comment])
+findImport :: Index.Index -> [FilePath] -> (Types.ImportDecl, [Types.Comment])
     -> IO (Maybe Types.ImportLine)
-findImport includes (imp, cmts) = do
-    found <- findModuleName includes (Types.importDeclModule imp)
+findImport index includes (imp, cmts) = do
+    found <- findModuleName index includes (Types.importDeclModule imp)
     return $ case found of
         Nothing -> Nothing
         Just source -> Just $ Types.ImportLine imp cmts source
 
 -- | True if it was found in a local directory, False if it was found in the
 -- ghc package db, and Nothing if it wasn't found at all.
-findModuleName :: [FilePath] -> Types.ModuleName -> IO (Maybe Types.Source)
-findModuleName includes mod =
-    Util.ifM (isLocalModule mod ("" : includes)) (return (Just Types.Local)) $
-        Util.ifM (isPackageModule mod) (return (Just Types.Package))
-            (return Nothing)
+findModuleName :: Index.Index -> [FilePath] -> Types.ModuleName
+    -> IO (Maybe Types.Source)
+findModuleName index includes mod = do
+    isLocal <- isLocalModule mod ("" : includes)
+    return $
+        if isLocal then Just Types.Local
+        else if isPackageModule index mod then Just Types.Package
+        else Nothing
 
 isLocalModule :: Types.ModuleName -> [FilePath] -> IO Bool
 isLocalModule mod =
     Util.anyM (Directory.doesFileExist . (</> Types.moduleToPath mod))
 
-isPackageModule :: Types.ModuleName -> IO Bool
-isPackageModule (Types.ModuleName name) = do
-    output <- Process.readProcess "ghc-pkg"
-        ["--simple-output", "find-module", name] ""
-    return $ not (null output)
+isPackageModule :: Index.Index -> Types.ModuleName -> Bool
+isPackageModule index (Types.ModuleName name) =
+    Map.member (Types.Qualification name) index
 
 -- * util
 

@@ -2,6 +2,7 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PartialTypeSignatures #-} -- sort keys only care about Ord
+{-# OPTIONS_GHC -Wno-partial-type-signatures #-}
 module Config where
 import qualified Data.Either as Either
 import qualified Data.List as List
