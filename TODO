@@ -4,6 +4,14 @@
   e.g. (</>) -> System.FilePath ((</>))
   . I'd need to start looking at unqualified symbols, and then I need to know
     if they are in scope or not.
+  . Get non-Qual: UnQual l (Name l)
+  . Then instead of the Index, I have a unqualified Index directly from the
+    config file.
+  . Generate or modify unqualified import lines.
+  . Config syntax:
+    unqualified: System.FilePath.(</>) System.FilePath.takeFileName
+  . I need the parens because import syntax requires them.  They correspond to
+    Symbol Names.
 
 * Synth.Sampler.Render gets Statistics.Sample instead of local
   Synth.Sampler.Sample
@@ -36,7 +44,7 @@
         PATH=$(stack path --compiler-bin):$PATH
     fi
 
-- haskell-src-exts is slow and buggy.  Can I use the ghc parser yet?
+- haskell-src-exts is buggy.  Can I use the ghc parser yet?
   . ghc-parser package?
   . But I thought this was tied to the trees that grow changes?
   . ghc-syntax-highlighter - uses lexer?

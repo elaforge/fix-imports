@@ -59,7 +59,6 @@ import qualified Numeric
 import qualified System.Directory as Directory
 import qualified System.FilePath as FilePath
 import System.FilePath ((</>))
-import qualified System.Process as Process
 
 import qualified Config
 import qualified Index
@@ -393,8 +392,8 @@ importRange mod = case mod of
 -- | Uniplate is rad.
 moduleQNames :: Types.Module -> [Types.Qualification]
 moduleQNames mod =
-    [Types.moduleToQualification m
-    |  Haskell.Qual _ m _ <- Uniplate.universeBi mod
+    [ Types.moduleToQualification m
+    | Haskell.Qual _ m _ <- Uniplate.universeBi mod
     ]
 
 -- * metrics
@@ -403,8 +402,7 @@ metric :: Text -> IO Metric
 metric name = flip (,) name <$> Clock.getCurrentTime
 
 showMetrics :: [Metric] -> Text
-showMetrics = Text.unlines . format -- . filter ((>0.01) . snd)
-    . map diff . Util.zipPrev . Util.sortOn fst
+showMetrics = Text.unlines . format . map diff . Util.zipPrev . Util.sortOn fst
     where
     format metricDurs =
         map (format1 total) (metricDurs ++ [("total", total)])
@@ -418,10 +416,17 @@ showMetrics = Text.unlines . format -- . filter ((>0.01) . snd)
         (metric, cur `Clock.diffUTCTime` prev)
 
 percent :: Double -> Text
-percent = (<>"%") . showt . round . (*100)
+percent = (<>"%") . showt . isInt . round . (*100)
+    where
+    isInt :: Int -> Int
+    isInt = id
 
 showDuration :: Clock.NominalDiffTime -> Text
-showDuration = Text.pack . ($"s") . Numeric.showFFloat (Just 2) . realToFrac
+showDuration =
+    Text.pack . ($"s") . Numeric.showFFloat (Just 2) . isDouble . realToFrac
+    where
+    isDouble :: Double -> Double
+    isDouble = id
 
 justifyR :: Int -> Text -> Text
 justifyR width = Text.justifyRight width ' '
