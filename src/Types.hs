@@ -18,13 +18,17 @@ data Source = Local | Package deriving (Eq, Show)
 data Comment = Comment CmtPos String deriving (Show)
 data CmtPos = CmtAbove | CmtRight deriving (Show)
 
+-- | A parsed import line.
 type ImportDecl = Haskell.ImportDecl Haskell.SrcSpanInfo
 type Module = Haskell.Module Haskell.SrcSpanInfo
 
 -- | A Qualification is a qualified name minus the actual name.  So it should
 -- be the tail of a ModuleName.
 newtype Qualification = Qualification String
-    deriving (Eq, Ord, Show)
+    deriving (Eq, Ord, Show, String.IsString)
+
+-- | An unqualified identifier.
+type Name = Haskell.Name Haskell.SrcSpanInfo
 
 newtype ModuleName = ModuleName String
     deriving (Eq, Ord, Show, String.IsString)

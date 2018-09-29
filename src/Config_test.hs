@@ -1,6 +1,7 @@
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Config_test where
+import qualified Data.Map as Map
 import qualified Data.Text as Text
 import EL.Test.Global
 import qualified EL.Test.Testing as Testing
@@ -52,7 +53,7 @@ test_formatGroups = do
             (Testing.expectRight (parse (unlines imports)))
     equal (f [] []) []
     -- Unqualified import-all goes last.
-    equal (f []
+    equal (f ["sort-unqualified-last: t"]
             [ "import Z", "import A"
             , "import qualified C", "import qualified B"
             , "import C (a)"
@@ -113,5 +114,6 @@ parse source = case FixImports.parse [] "" source of
 parseConfig :: [Text.Text] -> Config.Config
 parseConfig lines
     | null errs = config
-    | otherwise = error $ "parsing " <> show lines  <> ": " <> unlines errs
+    | otherwise = error $ "parsing " <> show lines  <> ": "
+        <> Text.unpack (Text.unlines errs)
     where (config, errs) = Config.parse (Text.unlines lines)

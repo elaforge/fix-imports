@@ -35,6 +35,7 @@
         by default, but a per-project order may be defined.
 -}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TupleSections #-}
 module FixImports where
 import Prelude hiding (mod)
 import Control.Applicative ((<$>))
@@ -88,8 +89,10 @@ fixModule config modulePath source = do
             return $ Left $ Haskell.prettyPrint srcloc ++ ": " ++ err
         Haskell.ParseOk (mod, cmts) -> do
             mParse <- mod `seq` cmts `seq` metric "parse"
-            fmap (addMetrics [mStart, mCpp, mParse]) <$>
-                fixImports config modulePath mod cmts source
+            index <- Index.load
+            mLoad <- metric "load-index"
+            fmap (addMetrics [mStart, mCpp, mParse, mLoad]) <$>
+                fixImports ioFilesystem config index modulePath mod cmts source
 
 parse :: [Extension.Extension] -> FilePath -> String
     -> Haskell.ParseResult
@@ -115,7 +118,7 @@ parse extensions modulePath =
 -- post-CPP so if you put CPP in the imports block it will be stripped out.
 -- It seems hard to fix imports inside CPP.
 cppModule :: FilePath -> String -> IO String
-cppModule filename s = Cpphs.runCpphs options filename s
+cppModule filename = Cpphs.runCpphs options filename
     where
     options = Cpphs.defaultCpphsOptions { Cpphs.boolopts = boolOpts }
     boolOpts = Cpphs.defaultBoolOptions
@@ -132,24 +135,38 @@ cppModule filename s = Cpphs.runCpphs options filename s
         , Cpphs.warnings = False
         }
 
+-- | Capture all the IO operations needed by fixImports, so I can test without
+-- IO.  I could have used Free, but the operations are few, so it seemed
+-- simpler to factor them out.
+data Filesystem m = Filesystem {
+    _listDir :: FilePath -> m ([FilePath], [FilePath]) -- ^ (dirs, files)
+    , _doesFileExist :: FilePath -> m Bool
+    , _metric :: Text -> m Metric
+    }
+
+ioFilesystem :: Filesystem IO
+ioFilesystem = Filesystem
+    { _listDir = \ dir -> do
+        fns <- Maybe.fromMaybe [] <$> Util.catchENOENT (Util.listDir dir)
+        Util.partitionM Directory.doesDirectoryExist fns
+    , _doesFileExist = Directory.doesFileExist
+    , _metric = metric
+    }
+
 -- | Take a parsed module along with its unparsed text.  Generate a new import
 -- block with proper spacing, formatting, and comments.  Then snip out the
 -- import block on the import file, and replace it.
-fixImports :: Config.Config -> FilePath -> Types.Module
-    -> [Haskell.Comment] -> String -> IO (Either String Result)
-fixImports config modulePath mod cmts source = do
-    -- Don't bother loading the index if I'm not going to use it.
-    -- TODO actually, only load it if I don't find local imports
-    -- I guess Data.Binary's laziness will serve me there
+fixImports :: Monad m => Filesystem m -> Config.Config -> Index.Index
+    -> FilePath -> Types.Module -> [Haskell.Comment] -> String
+    -> m (Either String Result)
+fixImports fs config index modulePath mod cmts source = do
     mProcess <- newImports `seq` unusedImports `seq` imports `seq` range
-        `seq` metric "process"
-    index <- Index.load
-    mLoad <- metric "load-index"
-
-    mbNew <- mapM (mkImportLine config modulePath index) (Set.toList newImports)
-    mNewImports <- metric "find-new-imports"
-    mbExisting <- mapM (findImport index (Config._includes config)) imports
-    mExistingImports <- metric "find-existing-imports"
+        `seq` _metric fs "process"
+    mbNew <- mapM (findNewImport fs config modulePath index)
+        (Set.toList newImports)
+    mNewImports <- _metric fs "find-new-imports"
+    mbExisting <- mapM (findImport fs index (Config._includes config)) imports
+    mExistingImports <- _metric fs "find-existing-imports"
     let existing = map (Types.importDeclModule . fst) imports
     let (notFound, importLines) = Either.partitionEithers $
             zipWith mkError
@@ -168,11 +185,13 @@ fixImports config modulePath mod cmts source = do
                 map (Types.importDeclModule . Types.importDecl) $
                 Maybe.catMaybes mbNew
             , resultRemoved = unusedImports
-            , resultMetrics = [mProcess, mLoad, mNewImports, mExistingImports]
+            , resultMetrics = [mProcess, mNewImports, mExistingImports]
             }
     where
     (newImports, unusedImports, imports, range) = importInfo mod cmts
     toModule (Types.Qualification name) = Types.ModuleName name
+
+type ImportLine = (Types.ImportDecl, [Types.Comment])
 
 -- | Clip out the range from the given text and replace it with the given
 -- lines.
@@ -186,41 +205,48 @@ substituteImports imports (start, end) source =
 -- * find new imports
 
 -- | Make a new ImportLine from a ModuleName.
-mkImportLine :: Config.Config -> FilePath -> Index.Index -> Types.Qualification
-    -> IO (Maybe Types.ImportLine)
-mkImportLine config modulePath index qual@(Types.Qualification name) = do
-    found <- findModule config index modulePath qual
-    return $ case found of
-        Nothing -> Nothing
-        Just (mod, local) -> Just (Types.ImportLine (mkImport mod) [] local)
+findNewImport :: Monad m => Filesystem m -> Config.Config -> FilePath
+    -> Index.Index -> Types.Qualification
+    -> m (Maybe Types.ImportLine)
+    -- ^ Nothing if the module wasn't found
+findNewImport fs config modulePath index qual =
+    fmap make <$> findModule fs config index modulePath qual
     where
-    mkImport (Types.ModuleName mod) = Haskell.ImportDecl
-        { Haskell.importAnn = empty
-        , Haskell.importModule = Haskell.ModuleName empty mod
-        , Haskell.importQualified = True
-        , Haskell.importSrc = False
-        , Haskell.importSafe = False
-        , Haskell.importPkg = Nothing
-        , Haskell.importAs = importAs mod
-        , Haskell.importSpecs = Nothing
-        }
-    importAs mod
-        | name == mod = Nothing
-        | otherwise = Just $ Haskell.ModuleName empty name
-    empty = Haskell.noInfoSpan (Haskell.SrcSpan "" 0 0 0 0)
+    make (mod, local) = Types.ImportLine (mkImportDecl mod (Just qual)) [] local
+
+mkImportDecl :: Types.ModuleName -> Maybe Types.Qualification
+    -> Types.ImportDecl
+mkImportDecl (Types.ModuleName name) qualification = Haskell.ImportDecl
+    { Haskell.importAnn = noSpan
+    , Haskell.importModule = Haskell.ModuleName noSpan name
+    , Haskell.importQualified = Maybe.isJust qualification
+    , Haskell.importSrc = False
+    , Haskell.importSafe = False
+    , Haskell.importPkg = Nothing
+    , Haskell.importAs = importAs
+    , Haskell.importSpecs = Nothing
+    }
+    where
+    importAs
+        | Just (Types.Qualification q) <- qualification, q /= name =
+            Just $ Haskell.ModuleName noSpan q
+        | otherwise = Nothing
+
+noSpan :: Haskell.SrcSpanInfo
+noSpan = Haskell.noInfoSpan (Haskell.SrcSpan "" 0 0 0 0)
 
 -- | Find the qualification and its ModuleName and True if it was a local
 -- import.  Nothing if it wasn't found at all.
-findModule :: Config.Config -> Index.Index -> FilePath
-    -- ^ Path to the module being fixed.
-    -> Types.Qualification -> IO (Maybe (Types.ModuleName, Types.Source))
-findModule config index modulePath qual = do
-    found <- findLocalModules (Config._includes config) qual
+findModule :: Monad m => Filesystem m -> Config.Config -> Index.Index
+    -> FilePath -- ^ Path to the module being fixed.
+    -> Types.Qualification -> m (Maybe (Types.ModuleName, Types.Source))
+findModule fs config index modulePath qual = do
+    found <- findLocalModules fs (Config._includes config) qual
     let local = [(Nothing, Types.pathToModule fn) | fn <- found]
         package = map (Bifunctor.first Just) $ Map.findWithDefault [] qual index
-    Config.debug config $ "findModule " <> showt qual <> " from "
-        <> showt modulePath <> ": local " <> showt found
-        <> "\npackage: " <> showt package
+    -- Config.debug config $ "findModule " <> showt qual <> " from "
+    --     <> showt modulePath <> ": local " <> showt found
+    --     <> "\npackage: " <> showt package
     let prio = Config._modulePriority config
     return $ case Config.pickModule prio modulePath (local++package) of
         Just (package, mod) -> Just
@@ -229,25 +255,26 @@ findModule config index modulePath qual = do
 
 -- | Given A.B, look for A/B.hs, */A/B.hs, */*/A/B.hs, etc. in each of the
 -- include paths.
-findLocalModules :: [FilePath] -> Types.Qualification -> IO [FilePath]
-findLocalModules includes (Types.Qualification name) = do
+findLocalModules :: Monad m => Filesystem m -> [FilePath]
+    -> Types.Qualification -> m [FilePath]
+findLocalModules fs includes (Types.Qualification name) = do
     concat <$> forM includes (\dir -> map (stripDir dir) <$>
-        findFiles 4 (Types.moduleToPath (Types.ModuleName name)) dir)
+        findFiles fs 4 (Types.moduleToPath (Types.ModuleName name)) dir)
 
 stripDir :: FilePath -> FilePath -> FilePath
 stripDir dir path
     | dir == "." = path
     | otherwise = dropWhile (=='/') $ drop (length dir) path
 
-findFiles :: Int -- ^ Descend into subdirectories this many times.
+findFiles :: Monad m => Filesystem m
+    -> Int -- ^ Descend into subdirectories this many times.
     -> FilePath -- ^ Find files with this suffix.  Can contain slashes.
     -> FilePath -- ^ Start from this directory.  Return [] if it doesn't exist.
-    -> IO [FilePath]
-findFiles depth file dir = do
-    fns <- Maybe.fromMaybe [] <$> Util.catchENOENT (Util.listDir dir)
-    (subdirs, fns) <- Util.partitionM Directory.doesDirectoryExist fns
+    -> m [FilePath]
+findFiles fs depth file dir = do
+    (subdirs, fns) <- _listDir fs dir
     subfns <- if depth > 0
-        then concat <$> mapM (findFiles (depth-1) file)
+        then concat <$> mapM (findFiles fs (depth-1) file)
             (filter isModuleDir subdirs)
         else return []
     return $ filter sameSuffix fns ++ subfns
@@ -260,28 +287,29 @@ findFiles depth file dir = do
 
 -- | Make an existing import into an ImportLine by finding out if it's a local
 -- module or a package module.
-findImport :: Index.Index -> [FilePath] -> (Types.ImportDecl, [Types.Comment])
-    -> IO (Maybe Types.ImportLine)
-findImport index includes (imp, cmts) = do
-    found <- findModuleName index includes (Types.importDeclModule imp)
+findImport :: Monad m => Filesystem m -> Index.Index -> [FilePath] -> ImportLine
+    -> m (Maybe Types.ImportLine)
+findImport fs index includes (imp, cmts) = do
+    found <- findModuleName fs index includes (Types.importDeclModule imp)
     return $ case found of
         Nothing -> Nothing
         Just source -> Just $ Types.ImportLine imp cmts source
 
 -- | True if it was found in a local directory, False if it was found in the
 -- ghc package db, and Nothing if it wasn't found at all.
-findModuleName :: Index.Index -> [FilePath] -> Types.ModuleName
-    -> IO (Maybe Types.Source)
-findModuleName index includes mod = do
-    isLocal <- isLocalModule mod ("" : includes)
+findModuleName :: Monad m => Filesystem m -> Index.Index -> [FilePath]
+    -> Types.ModuleName -> m (Maybe Types.Source)
+findModuleName fs index includes mod = do
+    isLocal <- isLocalModule fs mod ("" : includes)
     return $
         if isLocal then Just Types.Local
         else if isPackageModule index mod then Just Types.Package
         else Nothing
 
-isLocalModule :: Types.ModuleName -> [FilePath] -> IO Bool
-isLocalModule mod =
-    Util.anyM (Directory.doesFileExist . (</> Types.moduleToPath mod))
+isLocalModule :: Monad m => Filesystem m -> Types.ModuleName -> [FilePath]
+    -> m Bool
+isLocalModule fs mod =
+    Util.anyM (_doesFileExist fs . (</> Types.moduleToPath mod))
 
 isPackageModule :: Index.Index -> Types.ModuleName -> Bool
 isPackageModule index (Types.ModuleName name) =
@@ -290,9 +318,12 @@ isPackageModule index (Types.ModuleName name) =
 -- * util
 
 importInfo :: Types.Module -> [Haskell.Comment]
-    -> (Set.Set Types.Qualification, Set.Set Types.ModuleName,
-        [(Types.ImportDecl, [Types.Comment])], (Int, Int))
-    -- ^ (missingImports, unusedImports, unchangedImports, rangeOfImportBlock).
+    ->  ( Set.Set Types.Qualification
+        , Set.Set Types.ModuleName
+        , [ImportLine]
+        , (Int, Int)
+        )
+    -- ^ (missingImports, unusedImports, unchangedImports, rangeOfImportBlock)
 importInfo mod cmts = (missing, unused, declCmts, range)
     where
     unused = Set.difference (Set.fromList modules)
@@ -338,8 +369,7 @@ filterImportCmts (start, end) = filter inRange
 -- Spaces between comments above an import will be lost, and multiple comments
 -- to the right of an import (e.g. commenting a complicated import list) will
 -- probably be messed up.  TODO Fix it if it becomes a problem.
-associateComments :: [Types.ImportDecl] -> [Haskell.Comment]
-    -> [(Types.ImportDecl, [Types.Comment])]
+associateComments :: [Types.ImportDecl] -> [Haskell.Comment] -> [ImportLine]
 associateComments imports cmts = snd $ List.mapAccumL associate cmts imports
     where
     associate cmts imp = (after, (imp, associated))

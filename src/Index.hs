@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 -- | Maintain the index from Qualification to the full module from the package
 -- db that this Qualification probably intends.
-module Index (Index, Package, empty, load, parseSections) where
+module Index (Index, Package, empty, load, makeIndex, parseSections) where
 import Prelude hiding (mod)
 import Control.Monad
 import qualified Data.Either as Either
@@ -45,15 +45,18 @@ build = do
             ++ List.intercalate ", " errors
     return index
 
+makeIndex :: [(Text, [Types.ModuleName])] -- ^ [(package, modules)]
+    -> Index
+makeIndex packages = Map.fromListWith (++)
+    [ (qual, [(T.unpack package, mod)])
+    | (package, modules) <- packages
+    , mod <- modules
+    , qual <- moduleQualifications mod
+    ]
+
 parseDump :: Text -> ([String], Index)
-parseDump text = (errors, index)
+parseDump text = (errors, makeIndex packages)
     where
-    index = Map.fromListWith (++)
-        [ (qual, [(T.unpack package, mod)])
-        | (package, modules) <- packages
-        , mod <- modules
-        , qual <- moduleQualifications mod
-        ]
     (errors, packages) = Either.partitionEithers $
         extractSections (parseSections text)
 

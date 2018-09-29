@@ -5,9 +5,13 @@ import qualified Control.Concurrent.MVar as MVar
 import qualified Control.Exception as Exception
 import Control.Monad
 
+import qualified Data.Char as Char
 import qualified Data.Function as Function
+import qualified Data.IntSet as IntSet
 import qualified Data.List as List
 import qualified Data.List.Split as Split
+import qualified Data.Map as Map
+import qualified Data.Set as Set
 import qualified Data.Text as T
 import qualified Data.Text.IO as Text.IO
 
@@ -73,7 +77,7 @@ zipPrev xs = zip xs (drop 1 xs)
 
 -- * control
 
-ifM :: (Monad m) => m Bool -> m a -> m a -> m a
+ifM :: Monad m => m Bool -> m a -> m a -> m a
 ifM cond consequent alternative = do
     b <- cond
     if b then consequent else alternative
@@ -84,7 +88,7 @@ partitionM f = go [] []
     go ts fs [] = return (ts, fs)
     go ts fs (x:xs) = ifM (f x) (go (x:ts) fs xs) (go ts (x:fs) xs)
 
-anyM :: (a -> IO Bool) -> [a] -> IO Bool
+anyM :: Monad m => (a -> m Bool) -> [a] -> m Bool
 anyM _ [] = return False
 anyM f (x:xs) = ifM (f x) (return True) (anyM f xs)
 

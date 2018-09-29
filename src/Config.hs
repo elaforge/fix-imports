@@ -9,6 +9,7 @@ import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
 import qualified Data.Text as Text
+import Data.Text (Text)
 import qualified Data.Text.IO as Text.IO
 
 import qualified Language.Haskell.Exts as Haskell
@@ -72,15 +73,19 @@ empty = Config
     }
 
 -- | Parse .fix-imports file.
-parse :: Text.Text -> (Config, [String])
+parse :: Text -> (Config, [Text])
 parse text = (config, errors)
     where
-    commas = List.intercalate ", "
-    errors =
-        [ ".fix-imports has unrecognized fields: "
-            ++ commas unknownFields | not (null unknownFields) ]
-        ++ [ ".fix-imports has unknown language extensions: "
-            ++ commas unknownLanguage | not (null unknownLanguage) ]
+    commas = Text.intercalate ", "
+    errors = map (".fix-imports: "<>) $ concat
+        [ [ "unrecognized fields: " <> commas unknownFields
+          | not (null unknownFields)
+          ]
+        , [ "unknown language extensions: "
+            <> commas (map Text.pack unknownLanguage)
+          | not (null unknownLanguage)
+          ]
+        ]
     config = empty
         { _includes = get "include"
         , _language = language
@@ -112,8 +117,10 @@ parse text = (config, errors)
         , "prio-module-high", "prio-module-low"
         , "sort-unqualified-last"
         ]
-    fields = Map.fromList [(Text.unpack section, map Text.unpack words)
-        | (section, words) <- Index.parseSections text]
+    fields = Map.fromList
+        [ (section, map Text.unpack words)
+        | (section, words) <- Index.parseSections text
+        ]
     getModules = map Types.ModuleName . get
     get k = Map.findWithDefault [] k fields
     getBool k = k `Map.member` fields
@@ -290,7 +297,7 @@ showImport (Types.ImportLine imp cmts _) =
 
 -- * log
 
-debug :: Config -> Text.Text -> IO ()
+debug :: Config -> Text -> IO ()
 debug config msg
     | _debug config = Text.IO.hPutStrLn IO.stderr msg
     | otherwise = return ()

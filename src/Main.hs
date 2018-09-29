@@ -26,10 +26,10 @@ import qualified Util
 main :: IO ()
 main = do
     (config, errors) <- readConfig ".fix-imports"
-    mapM_ (IO.hPutStrLn IO.stderr) errors
+    mapM_ (Text.IO.hPutStrLn IO.stderr) errors
     mainConfig config
 
-readConfig :: FilePath -> IO (Config.Config, [String])
+readConfig :: FilePath -> IO (Config.Config, [Text.Text])
 readConfig = fmap (maybe (Config.empty, []) Config.parse)
     . Util.catchENOENT . Text.IO.readFile
 
