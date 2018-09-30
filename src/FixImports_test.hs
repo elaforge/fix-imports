@@ -69,6 +69,11 @@ test_unqualified = do
         "import A.B (a, c, z)\n\
         \x = (c, c)\n"
         )
+    equal (run "unqualified: A.B.c A.B.a" "import A.B (a, c)\nx = a") $
+        Right ([], [],
+        "import A.B (a)\n\
+        \x = a\n"
+        )
 
     -- local still goes below package
     equal (run "unqualified: C.a" "import A.B\nimport Z\nx = a") $
@@ -87,10 +92,12 @@ test_unqualified = do
         \x = a </> b\n"
         )
 
-    -- -- Removed unused.
-    -- -- TODO not implemented yet
-    -- equal (run "unqualified: A.B.c" "import A.B (c)\nx = x\n") $
-    --     Right ([], ["A.B"], "\nx = x\n")
+    -- Removed unused.
+    equal (run "unqualified: A.B.c" "import A.B (c)\nx = x\n") $
+        Right ([], ["A.B"], "x = x\n")
+    -- But not if it's a spec-less import.
+    equal (run "unqualified: A.B.c" "import A.B\nx = x\n") $
+        Right ([], [], "import A.B\nx = x\n")
 
 
 eResult :: FixImports.Result -> ([Types.ModuleName], [Types.ModuleName], String)

@@ -42,7 +42,7 @@ module FixImports where
 import Prelude hiding (mod)
 import Control.Applicative ((<$>))
 import qualified Control.DeepSeq as DeepSeq
-import qualified Data.Bifunctor as Bifunctor
+import Data.Bifunctor (first)
 import qualified Data.Char as Char
 import qualified Data.Either as Either
 import qualified Data.Generics.Uniplate.Data as Uniplate
@@ -53,6 +53,7 @@ import qualified Data.Set as Set
 import qualified Data.Text as Text
 import Data.Text (Text)
 import qualified Data.Time.Clock as Clock
+import qualified Data.Tuple as Tuple
 
 import qualified Language.Haskell.Exts as Haskell
 import qualified Language.Haskell.Exts.Extension as Extension
@@ -171,7 +172,8 @@ fixImports fs config index modulePath mod cmts source = do
     mbNew <- mapM (findNewImport fs config modulePath index)
         (Set.toList newImports)
     mNewImports <- _metric fs mbNew "find-new-imports"
-    (imports, newUnqualImports) <- return $ fixUnqualified config mod imports
+    (imports, newUnqualImports, unusedUnqual) <- return $
+        fixUnqualified config mod imports
     newUnqualImports <- mapM (locateImport fs) newUnqualImports
     mUnqual <- _metric fs newUnqualImports "unqualified-imports"
     mbExisting <- mapM (findImport fs index (Config._includes config)) imports
@@ -194,7 +196,7 @@ fixImports fs config index modulePath mod cmts source = do
             , resultAdded = Set.fromList $
                 map (Types.importDeclModule . Types.importDecl) $
                 Maybe.catMaybes mbNew ++ newUnqualImports
-            , resultRemoved = unusedImports
+            , resultRemoved = unusedImports <> Set.fromList unusedUnqual
             , resultMetrics =
                 [mProcess, mNewImports, mExistingImports, mUnqual]
             }
@@ -214,52 +216,92 @@ locateImport fs (decl, cmts) = do
 -- | This is like 'Types.ImportLine', except without Local/Package info.
 type ImportLine = (Types.ImportDecl, [Types.Comment])
 
+
 -- | Add unqualified imports.
 --
 -- - Get unqualifieds.
 -- - If _unqualified non-empty, filter them to the ones in _unqualified.
 -- - Add or modify import lines for them.
+-- - Remove imports that don't appear in unqualifiedImports
 fixUnqualified :: Config.Config -> Types.Module -> [ImportLine]
-    -> ([ImportLine], [ImportLine])
-    -- ^ (modified, new)
+    -> ([ImportLine], [ImportLine], [Types.ModuleName])
+    -- ^ (modified, new, removed)
 fixUnqualified config mod imports =
-    foldr fix (imports, []) (Map.toList (unqualifiedImports config mod))
+    remove . foldr fixReference (imports, []) . Map.toList $ references
     where
-    fix (moduleName, names) (existing, new) =
-        case Util.modifyAt (matches moduleName) add existing of
-            Nothing -> (existing, newImport : new)
+    remove (modified, new) =
+        (kept, new, map (Types.importDeclModule . fst) removed)
+        where (kept, removed) = List.partition (importUsed . fst) modified
+    references = unqualifiedImports config mod
+    importUsed decl = not (isUnqualifiedImport decl)
+        || Map.member name references
+        -- Only clear imports for explicitly listed unqualified imports that
+        -- have spec lists.
+        || Maybe.isNothing (Haskell.importSpecs decl)
+        || Set.notMember name managedModules
+        where name = Types.importDeclModule decl
+    fixReference (moduleName, names) (existing, new) =
+        case Util.modifyAt (matches moduleName . fst) fixSpecs existing of
+            Nothing -> (existing, (newImport, []) : new)
             Just modified -> (modified, new)
         where
-        add = Bifunctor.first $ addImportSpecs names
-        newImport = (addImportSpecs names $ mkImportDecl moduleName Nothing, [])
-    matches name (decl, _) = not (Haskell.importQualified decl)
+        -- Replace only the specs that are configured to be automatically
+        -- managed.
+        fixSpecs = first $
+            modifyImportSpecs ((names++) . filter (not . isManaged))
+        newImport = modifyImportSpecs (names++) $
+            mkImportDecl moduleName Nothing
+        isManaged name = maybe False (name `elem`) $
+            Map.lookup moduleName moduleToNames
+    matches name decl = isUnqualifiedImport decl
         && Types.importDeclModule decl == name
+    isUnqualifiedImport decl = not (Haskell.importQualified decl)
         && maybe True (not . importSpecsHiding) (Haskell.importSpecs decl)
+
+    -- Derived from Config._unqualified.
+    managedModules = Set.fromList $ Map.elems $ Config._unqualified config
+    moduleToNames :: Map.Map Types.ModuleName [Haskell.Name ()]
+    moduleToNames = Util.multimap . map Tuple.swap . Map.toList
+        . Config._unqualified $ config
 
 -- | Stupid undocumented field.
 importSpecsHiding :: Haskell.ImportSpecList l -> Bool
 importSpecsHiding (Haskell.ImportSpecList _ hiding _) = hiding
 
-addImportSpecs :: [Types.Name] -> Types.ImportDecl -> Types.ImportDecl
-addImportSpecs names decl = decl
+-- | I strip SrcSpanInfo from the Names because otherwise sorting and
+-- unique'ing is too finicky.
+modifyImportSpecs :: ([Haskell.Name ()] -> [Haskell.Name ()])
+    -> Types.ImportDecl -> Types.ImportDecl
+modifyImportSpecs modify decl = decl
     { Haskell.importSpecs = Just $
-        addSpec $ Maybe.fromMaybe noSpecs (Haskell.importSpecs decl)
+        modifySpecs $ Maybe.fromMaybe noSpecs (Haskell.importSpecs decl)
     }
     where
     -- hiding should be False due to the match above.
-    addSpec (Haskell.ImportSpecList span _hiding specs) =
+    modifySpecs (Haskell.ImportSpecList span _hiding specs) =
         Haskell.ImportSpecList span False $ Set.toList $ Set.fromList $
-            map (Haskell.IVar noSpan) names
-            ++ map (fmap (const noSpan)) specs
+            map (Haskell.IVar noSpan) (doModify ivars)
+            ++ others
+        where
+        (ivars, others) = Util.partitionOn ivarOf specs
+        ivarOf (Haskell.IVar _ name) = Just name
+        ivarOf _ = Nothing
+    doModify = map addSpan . modify . map stripSpan
     noSpecs = Haskell.ImportSpecList noSpan False []
 
+stripSpan :: Functor f => f Haskell.SrcSpanInfo -> f ()
+stripSpan = fmap (const ())
+
+addSpan :: Functor f => f () -> f Haskell.SrcSpanInfo
+addSpan = fmap (const noSpan)
+
 unqualifiedImports :: Config.Config -> Types.Module
-    -> Map.Map Types.ModuleName [Types.Name]
+    -> Map.Map Types.ModuleName [Haskell.Name ()]
 unqualifiedImports config mod
     | unqual == mempty = mempty
     | otherwise = Util.multimap $
-        Maybe.mapMaybe (\k -> (, const noSpan <$> k) <$> Map.lookup k unqual) $
-        map (fmap (const ())) $ moduleUnqualifieds mod
+        Maybe.mapMaybe (\k -> (, k) <$> Map.lookup k unqual) $
+        map stripSpan $ moduleUnqualifieds mod
     where unqual = Config._unqualified config
 
 -- | Clip out the range from the given text and replace it with the given
@@ -316,7 +358,7 @@ findModule :: Monad m => Filesystem m -> Config.Config -> Index.Index
 findModule fs config index modulePath qual = do
     found <- findLocalModules fs (Config._includes config) qual
     let local = [(Nothing, Types.pathToModule fn) | fn <- found]
-        package = map (Bifunctor.first Just) $ Map.findWithDefault [] qual index
+        package = map (first Just) $ Map.findWithDefault [] qual index
     -- Config.debug config $ "findModule " <> showt qual <> " from "
     --     <> showt modulePath <> ": local " <> showt found
     --     <> "\npackage: " <> showt package

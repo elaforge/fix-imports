@@ -116,6 +116,15 @@ multimap :: Ord k => [(k, a)] -> Map.Map k [a]
 multimap = Map.fromAscList . map (\gs -> (fst (List.head gs), map snd gs))
     . groupOn fst . sortOn fst
 
+partitionOn :: (a -> Maybe b) -> [a] -> ([b], [a])
+partitionOn f = go
+    where
+    go [] = ([], [])
+    go (x:xs) = case f x of
+        Just b -> (b:bs, as)
+        Nothing -> (bs, x:as)
+        where (bs, as) = go xs
+
 -- * control
 
 ifM :: Monad m => m Bool -> m a -> m a -> m a

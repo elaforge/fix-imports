@@ -13,7 +13,7 @@
   . I need the parens because import syntax requires them.  They correspond to
     Symbol Names.
 
-- remove unused unqualified imports, possibly just the ones in the unqualified
+* remove unused unqualified imports, possibly just the ones in the unqualified
 list
 
 * Synth.Sampler.Render gets Statistics.Sample instead of local

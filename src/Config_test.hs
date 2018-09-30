@@ -20,11 +20,17 @@ test_parse = do
             { _importOrder = Config.Priority ["A"] ["B"]
             , _sortUnqualifiedLast = False
             }
-    equal (Config._unqualified $ f ["unqualified: A.B.c D.E.(+)"]) $
-        Map.fromList
-            [ (Haskell.Ident () "c", "A.B")
-            , (Haskell.Symbol () "+", "D.E")
-            ]
+
+test_unqualified = do
+    let f = Config._unqualified . parseConfig
+    equal (f ["unqualified: A.B.c D.E.(+)"]) $ Map.fromList
+        [ (Haskell.Ident () "c", "A.B")
+        , (Haskell.Symbol () "+", "D.E")
+        ]
+    equal (f ["unqualified: A.B.c A.B.d"]) $ Map.fromList
+        [ (Haskell.Ident () "c", "A.B")
+        , (Haskell.Ident () "d", "A.B")
+        ]
 
 test_pickModule = do
     let f config modulePath candidates = Config.pickModule
