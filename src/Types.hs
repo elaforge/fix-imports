@@ -1,22 +1,35 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Types where
+import qualified Control.DeepSeq as DeepSeq
+import Control.DeepSeq (deepseq)
 import qualified Data.String as String
 import qualified Language.Haskell.Exts as Haskell
 import qualified System.FilePath as FilePath
 
 
+instance DeepSeq.NFData Haskell.Comment where
+    rnf (Haskell.Comment bool srcspan str) =
+        bool `seq` srcspan `seq` str `deepseq` ()
+
 data ImportLine = ImportLine {
-    importDecl :: ImportDecl
-    , importComments :: [Comment]
+    importDecl :: !ImportDecl
+    , importComments :: ![Comment]
     , importSource :: !Source
     } deriving (Show)
+
+instance DeepSeq.NFData ImportLine where
+    rnf (ImportLine decl cmts source) =
+        decl `seq` cmts `deepseq` source `seq` ()
 
 -- | Where did this import come from?
 data Source = Local | Package deriving (Eq, Show)
 
 -- | A Comment is associated with a particular import line.
-data Comment = Comment CmtPos String deriving (Show)
+data Comment = Comment !CmtPos !String deriving (Show)
 data CmtPos = CmtAbove | CmtRight deriving (Show)
+
+instance DeepSeq.NFData Comment where
+    rnf (Comment a b) = a `seq` b `seq` ()
 
 -- | A parsed import line.
 type ImportDecl = Haskell.ImportDecl Haskell.SrcSpanInfo
@@ -31,7 +44,7 @@ newtype Qualification = Qualification String
 type Name = Haskell.Name Haskell.SrcSpanInfo
 
 newtype ModuleName = ModuleName String
-    deriving (Eq, Ord, Show, String.IsString)
+    deriving (Eq, Ord, Show, DeepSeq.NFData, String.IsString)
 
 moduleName :: ModuleName -> String
 moduleName (ModuleName n) = n

@@ -4,6 +4,7 @@
 {-# LANGUAGE PartialTypeSignatures #-} -- sort keys only care about Ord
 {-# OPTIONS_GHC -Wno-partial-type-signatures #-}
 module Config where
+import qualified Data.Bifunctor as Bifunctor
 import qualified Data.Either as Either
 import qualified Data.List as List
 import qualified Data.Map as Map
@@ -11,6 +12,7 @@ import qualified Data.Maybe as Maybe
 import qualified Data.Text as Text
 import Data.Text (Text)
 import qualified Data.Text.IO as Text.IO
+import qualified Data.Tuple as Tuple
 
 import qualified Language.Haskell.Exts as Haskell
 import qualified Language.Haskell.Exts.Extension as Extension
@@ -32,6 +34,8 @@ data Config = Config {
     , _order :: Order
     -- | Heuristics to pick the right module.  Used by 'pickModule'.
     , _modulePriority :: Priorities
+    -- | Map unqualified names to the module to import for them.
+    , _unqualified :: Map.Map (Haskell.Name ()) Types.ModuleName
     , _debug :: Bool
     } deriving (Eq, Show)
 
@@ -69,6 +73,7 @@ empty = Config
         , _sortUnqualifiedLast = False
         }
     , _modulePriority = defaultPriorities
+    , _unqualified = mempty
     , _debug = False
     }
 
@@ -84,6 +89,9 @@ parse text = (config, errors)
         , [ "unknown language extensions: "
             <> commas (map Text.pack unknownLanguage)
           | not (null unknownLanguage)
+          ]
+        , [ "unqualified: " <> commas unknownUnqualified
+          | not (null unknownUnqualified)
           ]
         ]
     config = empty
@@ -106,7 +114,10 @@ parse text = (config, errors)
                 , low = getModules "prio-module-low"
                 }
             }
+        , _unqualified = Map.fromList $ map Tuple.swap unqualified
         }
+    (unknownUnqualified, unqualified) = Either.partitionEithers $
+        map parseUnqualified (get "unqualified")
     (unknownLanguage, language) = parseLanguage (get "language")
     unknownFields = Map.keys fields List.\\ valid
     valid =
@@ -116,6 +127,7 @@ parse text = (config, errors)
         , "prio-package-high", "prio-package-low"
         , "prio-module-high", "prio-module-low"
         , "sort-unqualified-last"
+        , "unqualified"
         ]
     fields = Map.fromList
         [ (section, map Text.unpack words)
@@ -124,6 +136,29 @@ parse text = (config, errors)
     getModules = map Types.ModuleName . get
     get k = Map.findWithDefault [] k fields
     getBool k = k `Map.member` fields
+
+-- |
+-- "A.B.c" -> (Haskell.Ident () "c", "A.B")
+-- "A.B.(+)" -> (Haskell.Symbol () "+", "A.B")
+parseUnqualified :: String -> Either Text (Types.ModuleName, Haskell.Name ())
+parseUnqualified sym = case hasParens name of
+    Just op
+        | all Util.haskellOpChar op -> Right (module_, Haskell.Symbol () op)
+        | otherwise -> Left $ "non-symbols in operator: " <> Text.pack sym
+    Nothing
+        | all (not . Util.haskellOpChar) name ->
+            Right (module_, Haskell.Ident () name)
+        | otherwise -> Left $ "symbol char in id, use parens: " <> Text.pack sym
+    where
+    (name, module_) =
+        Bifunctor.bimap reverse (Types.ModuleName . reverse . drop 1) $
+        break (=='.') $ reverse sym
+
+hasParens :: String -> Maybe String
+hasParens s
+    | "(" `List.isPrefixOf` s && ")" `List.isSuffixOf` s =
+        Just $ take (length s - 2) (drop 1 s)
+    | otherwise = Nothing
 
 parseLanguage :: [String] -> ([String], [Extension.Extension])
 parseLanguage = Either.partitionEithers . map parse

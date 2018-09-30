@@ -1,6 +1,6 @@
 * done; - not done; / decided against
 
-- I could have hard-coded one-offs for common unqualified imports,
+* I could have hard-coded one-offs for common unqualified imports,
   e.g. (</>) -> System.FilePath ((</>))
   . I'd need to start looking at unqualified symbols, and then I need to know
     if they are in scope or not.

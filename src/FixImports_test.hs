@@ -24,9 +24,10 @@ import EL.Test.Global
 
 test_simple = do
     let run config = fmap FixImports.resultText
-            . fixModule index [] (mkConfig config) "A.hs"
+            . fixModule index ["C.hs"] (mkConfig config) "A.hs"
         index = Index.makeIndex
             [ ("pkg", ["A.B"])
+            , ("zpkg", ["Z"])
             ]
     equal (run "" "x = B.c") $ Right
         "import qualified A.B as B\n\
@@ -34,7 +35,70 @@ test_simple = do
     equal (run "" "x = A.B.c") $ Right
         "import qualified A.B\n\
         \x = A.B.c\n"
-    leftLike (run "" "x = Z.c") "not found: Z"
+    leftLike (run "" "x = Q.c") "not found: Q"
+    -- Remove unused.
+    equal (run "" "import qualified A.B as B\n\nx = y") $ Right
+        "\nx = y\n"
+    -- Unless it's unqualified.
+    equal (run "" "import A.B as B\n\nx = y") $ Right
+        "import A.B as B\n\nx = y\n"
+
+    -- Local goes below package.
+    equal (run "" "x = (B.a, C.a, Z.a)") $ Right
+        "import qualified A.B as B\n\
+        \import qualified Z\n\
+        \\n\
+        \import qualified C\n\
+        \x = (B.a, C.a, Z.a)\n"
+
+test_unqualified = do
+    let run config = fmap eResult
+            . fixModule index ["C.hs"] (mkConfig config) "A.hs"
+        index = Index.makeIndex
+            [ ("pkg", ["A.B"])
+            , ("zpkg", ["Z"])
+            ]
+    equal (run "unqualified: A.B.c" "x = (c, c)") $ Right (["A.B"], [],
+        "import A.B (c)\n\
+        \x = (c, c)\n"
+        )
+
+    -- Modify an existing import.
+    equal (run "unqualified: A.B.c" "import A.B (a, z)\nx = (c, c)") $
+        Right ([], [],
+        "import A.B (a, c, z)\n\
+        \x = (c, c)\n"
+        )
+
+    -- local still goes below package
+    equal (run "unqualified: C.a" "import A.B\nimport Z\nx = a") $
+        Right (["C"], [],
+        "import A.B\n\
+        \import Z\n\
+        \\n\
+        \import C (a)\n\
+        \x = a\n"
+        )
+
+    -- Don't import when it's an assignee.
+    equal (run "unqualified: A.B.c" "c = x") $ Right ([], [], "c = x\n")
+    equal (run "unqualified: A.B.(</>)" "x = a </> b") $ Right (["A.B"], [],
+        "import A.B ((</>))\n\
+        \x = a </> b\n"
+        )
+
+    -- -- Removed unused.
+    -- -- TODO not implemented yet
+    -- equal (run "unqualified: A.B.c" "import A.B (c)\nx = x\n") $
+    --     Right ([], ["A.B"], "\nx = x\n")
+
+
+eResult :: FixImports.Result -> ([Types.ModuleName], [Types.ModuleName], String)
+eResult r =
+    ( Set.toList (FixImports.resultAdded r)
+    , Set.toList (FixImports.resultRemoved r)
+    , FixImports.resultText r
+    )
 
 fixModule :: Index.Index -> [FilePath]
     -> Config.Config -> FilePath -> String -> Either String FixImports.Result
@@ -46,14 +110,19 @@ fixModule index files config modulePath source =
             FixImports.fixImports (pureFilesystem files) config index
                 modulePath mod cmts source
 
+-- | The ./ stuff is tricky, this is probably still wrong.
 pureFilesystem :: [FilePath] -> FixImports.Filesystem Identity.Identity
 pureFilesystem files = FixImports.Filesystem
-    { _listDir = return . Maybe.fromMaybe ([], []) . (`Map.lookup` tree)
-    , _doesFileExist = return . (`elem` files)
-    , _metric = \_ ->
+    { _listDir = \dir -> return
+        . Maybe.fromMaybe ([], []) . (`Map.lookup` tree) $ dir
+    , _doesFileExist = \fn -> return . (`elem` files) . normalize $ fn
+    , _metric = \_ _ ->
         return (Clock.POSIX.posixSecondsToUTCTime 0, Text.pack "metric")
     }
-    where tree = filesToTree files
+    where
+    tree = filesToTree (map ("./"++) files)
+    normalize ('.':'/':fn) = fn
+    normalize fn = fn
 
 -- group by first element, then second, etc.
 filesToTree :: [FilePath] -> Map.Map FilePath ([FilePath], [FilePath])
@@ -72,7 +141,7 @@ prefixes = map (bimap concat concat) . drop 1
 
 mkConfig :: Text.Text -> Config.Config
 mkConfig content
-    | null errs = config
+    | null errs = config { Config._includes = ["."] }
     | otherwise = error $ "parsing " <> show content  <> ": "
         <> unlines (map Text.unpack errs)
     where (config, errs) = Config.parse content

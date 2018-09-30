@@ -40,6 +40,7 @@ executable fix-imports
         base >= 3 && < 5
         , containers
         , cpphs
+        , deepseq
         , directory
         , filepath
         , haskell-src-exts >= 1.16.0
@@ -59,6 +60,7 @@ test-suite test
         base >= 3 && < 5
         , containers
         , cpphs
+        , deepseq
         , directory
         , filepath
         , haskell-src-exts >= 1.16.0

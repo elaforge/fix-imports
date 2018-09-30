@@ -57,9 +57,9 @@ mainConfig config = do
             IO.putStr source
             let names = Util.join ", " . map Types.moduleName . Set.toList
                 (addedMsg, removedMsg) = (names added, names removed)
-            done <- FixImports.metric "done"
+            mDone <- FixImports.metric metrics "done"
             Config.debug config $ Text.stripEnd $
-                FixImports.showMetrics (done : metrics)
+                FixImports.showMetrics (mDone : metrics)
             when (verbose && (not (null addedMsg) || not (null removedMsg))) $
                 IO.hPutStrLn IO.stderr $ Util.join "; " $ filter (not . null)
                     [ if null addedMsg then "" else "added: " ++ addedMsg

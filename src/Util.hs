@@ -23,6 +23,34 @@ import qualified System.IO.Error as IO.Error
 import qualified System.Process as Process
 
 
+-- | Copy paste from FastTags.Tag.haskellOpChar.
+--
+-- From the haskell report:
+-- > varsym   →   ( symbol⟨:⟩ {symbol} )⟨reservedop | dashes⟩
+-- > symbol   →   ascSymbol | uniSymbol⟨special | _ | " | '⟩
+-- > uniSymbol    →   any Unicode symbol or punctuation
+haskellOpChar :: Char -> Bool
+haskellOpChar c =
+    IntSet.member (Char.ord c) opChars
+        || isSymbolCharacterCategory (Char.generalCategory c)
+    where
+    opChars :: IntSet.IntSet
+    opChars = IntSet.fromList $ map Char.ord "-!#$%&*+./<=>?@^|~:\\"
+
+isSymbolCharacterCategory :: Char.GeneralCategory -> Bool
+isSymbolCharacterCategory cat = Set.member cat symbolCategories
+    where
+    symbolCategories :: Set.Set Char.GeneralCategory
+    symbolCategories = Set.fromList
+        [ Char.ConnectorPunctuation
+        , Char.DashPunctuation
+        , Char.OtherPunctuation
+        , Char.MathSymbol
+        , Char.CurrencySymbol
+        , Char.ModifierSymbol
+        , Char.OtherSymbol
+        ]
+
 -- * list
 
 -- | List initial and final element, if any.
@@ -74,6 +102,19 @@ partition2 f1 f2 xs = (as, bs, xs3)
 
 zipPrev :: [a] -> [(a, a)]
 zipPrev xs = zip xs (drop 1 xs)
+
+-- | Modify a list at the first place the predicate matches.
+modifyAt :: (a -> Bool) -> (a -> a) -> [a] -> Maybe [a]
+modifyAt match modify = go
+    where
+    go [] = Nothing
+    go (x:xs)
+        | match x = Just (modify x : xs)
+        | otherwise = (x:) <$> go xs
+
+multimap :: Ord k => [(k, a)] -> Map.Map k [a]
+multimap = Map.fromAscList . map (\gs -> (fst (List.head gs), map snd gs))
+    . groupOn fst . sortOn fst
 
 -- * control
 

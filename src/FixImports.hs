@@ -36,10 +36,12 @@
 -}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE DisambiguateRecordFields #-}
+{-# LANGUAGE RankNTypes #-}
 module FixImports where
 import Prelude hiding (mod)
 import Control.Applicative ((<$>))
-import Control.Monad
+import qualified Control.DeepSeq as DeepSeq
 import qualified Data.Bifunctor as Bifunctor
 import qualified Data.Char as Char
 import qualified Data.Either as Either
@@ -66,6 +68,8 @@ import qualified Index
 import qualified Types
 import qualified Util
 
+import Control.Monad
+
 
 data Result = Result {
     resultText :: String
@@ -81,16 +85,16 @@ addMetrics ms result = result { resultMetrics = ms ++ resultMetrics result }
 
 fixModule :: Config.Config -> FilePath -> String -> IO (Either String Result)
 fixModule config modulePath source = do
-    mStart <- metric "start"
+    mStart <- metric () "start"
     processedSource <- cppModule modulePath source
-    mCpp <- metric "cpp"
+    mCpp <- metric () "cpp"
     case parse (Config._language config) modulePath processedSource of
         Haskell.ParseFailed srcloc err ->
             return $ Left $ Haskell.prettyPrint srcloc ++ ": " ++ err
         Haskell.ParseOk (mod, cmts) -> do
-            mParse <- mod `seq` cmts `seq` metric "parse"
+            mParse <- metric (mod `seq` (), cmts) "parse"
             index <- Index.load
-            mLoad <- metric "load-index"
+            mLoad <- metric () "load-index"
             fmap (addMetrics [mStart, mCpp, mParse, mLoad]) <$>
                 fixImports ioFilesystem config index modulePath mod cmts source
 
@@ -141,7 +145,7 @@ cppModule filename = Cpphs.runCpphs options filename
 data Filesystem m = Filesystem {
     _listDir :: FilePath -> m ([FilePath], [FilePath]) -- ^ (dirs, files)
     , _doesFileExist :: FilePath -> m Bool
-    , _metric :: Text -> m Metric
+    , _metric :: forall a. DeepSeq.NFData a => a -> Text -> m Metric
     }
 
 ioFilesystem :: Filesystem IO
@@ -160,13 +164,18 @@ fixImports :: Monad m => Filesystem m -> Config.Config -> Index.Index
     -> FilePath -> Types.Module -> [Haskell.Comment] -> String
     -> m (Either String Result)
 fixImports fs config index modulePath mod cmts source = do
-    mProcess <- newImports `seq` unusedImports `seq` imports `seq` range
-        `seq` _metric fs "process"
+    let (newImports, unusedImports, imports, range) = importInfo mod cmts
+    mProcess <- _metric fs
+        (length newImports, length unusedImports, length imports, range)
+        "process"
     mbNew <- mapM (findNewImport fs config modulePath index)
         (Set.toList newImports)
-    mNewImports <- _metric fs "find-new-imports"
+    mNewImports <- _metric fs mbNew "find-new-imports"
+    (imports, newUnqualImports) <- return $ fixUnqualified config mod imports
+    newUnqualImports <- mapM (locateImport fs) newUnqualImports
+    mUnqual <- _metric fs newUnqualImports "unqualified-imports"
     mbExisting <- mapM (findImport fs index (Config._includes config)) imports
-    mExistingImports <- _metric fs "find-existing-imports"
+    mExistingImports <- _metric fs mbExisting "find-existing-imports"
     let existing = map (Types.importDeclModule . fst) imports
     let (notFound, importLines) = Either.partitionEithers $
             zipWith mkError
@@ -175,23 +184,83 @@ fixImports fs config index modulePath mod cmts source = do
         mkError _ (Just imp) = Right imp
         mkError mod Nothing = Left mod
     let formattedImports =
-            Config.formatGroups (Config._order config) importLines
+            Config.formatGroups (Config._order config)
+                (importLines ++ newUnqualImports)
     return $ case notFound of
-        _ : _ -> Left $ "modules not found: "
+        _ : _ -> Left $ "not found: "
             ++ Util.join ", " (map Types.moduleName notFound)
         [] -> Right $ Result
             { resultText = substituteImports formattedImports range source
             , resultAdded = Set.fromList $
                 map (Types.importDeclModule . Types.importDecl) $
-                Maybe.catMaybes mbNew
+                Maybe.catMaybes mbNew ++ newUnqualImports
             , resultRemoved = unusedImports
-            , resultMetrics = [mProcess, mNewImports, mExistingImports]
+            , resultMetrics =
+                [mProcess, mNewImports, mExistingImports, mUnqual]
             }
     where
-    (newImports, unusedImports, imports, range) = importInfo mod cmts
     toModule (Types.Qualification name) = Types.ModuleName name
 
+locateImport :: Monad m => Filesystem m -> ImportLine -> m Types.ImportLine
+locateImport fs (decl, cmts) = do
+    isLocal <- _doesFileExist fs $
+        Types.moduleToPath $ Types.importDeclModule decl
+    return $ Types.ImportLine
+        { importDecl = decl
+        , importComments = cmts
+        , importSource = if isLocal then Types.Local else Types.Package
+        }
+
+-- | This is like 'Types.ImportLine', except without Local/Package info.
 type ImportLine = (Types.ImportDecl, [Types.Comment])
+
+-- | Add unqualified imports.
+--
+-- - Get unqualifieds.
+-- - If _unqualified non-empty, filter them to the ones in _unqualified.
+-- - Add or modify import lines for them.
+fixUnqualified :: Config.Config -> Types.Module -> [ImportLine]
+    -> ([ImportLine], [ImportLine])
+    -- ^ (modified, new)
+fixUnqualified config mod imports =
+    foldr fix (imports, []) (Map.toList (unqualifiedImports config mod))
+    where
+    fix (moduleName, names) (existing, new) =
+        case Util.modifyAt (matches moduleName) add existing of
+            Nothing -> (existing, newImport : new)
+            Just modified -> (modified, new)
+        where
+        add = Bifunctor.first $ addImportSpecs names
+        newImport = (addImportSpecs names $ mkImportDecl moduleName Nothing, [])
+    matches name (decl, _) = not (Haskell.importQualified decl)
+        && Types.importDeclModule decl == name
+        && maybe True (not . importSpecsHiding) (Haskell.importSpecs decl)
+
+-- | Stupid undocumented field.
+importSpecsHiding :: Haskell.ImportSpecList l -> Bool
+importSpecsHiding (Haskell.ImportSpecList _ hiding _) = hiding
+
+addImportSpecs :: [Types.Name] -> Types.ImportDecl -> Types.ImportDecl
+addImportSpecs names decl = decl
+    { Haskell.importSpecs = Just $
+        addSpec $ Maybe.fromMaybe noSpecs (Haskell.importSpecs decl)
+    }
+    where
+    -- hiding should be False due to the match above.
+    addSpec (Haskell.ImportSpecList span _hiding specs) =
+        Haskell.ImportSpecList span False $ Set.toList $ Set.fromList $
+            map (Haskell.IVar noSpan) names
+            ++ map (fmap (const noSpan)) specs
+    noSpecs = Haskell.ImportSpecList noSpan False []
+
+unqualifiedImports :: Config.Config -> Types.Module
+    -> Map.Map Types.ModuleName [Types.Name]
+unqualifiedImports config mod
+    | unqual == mempty = mempty
+    | otherwise = Util.multimap $
+        Maybe.mapMaybe (\k -> (, const noSpan <$> k) <$> Map.lookup k unqual) $
+        map (fmap (const ())) $ moduleUnqualifieds mod
+    where unqual = Config._unqualified config
 
 -- | Clip out the range from the given text and replace it with the given
 -- lines.
@@ -212,7 +281,11 @@ findNewImport :: Monad m => Filesystem m -> Config.Config -> FilePath
 findNewImport fs config modulePath index qual =
     fmap make <$> findModule fs config index modulePath qual
     where
-    make (mod, local) = Types.ImportLine (mkImportDecl mod (Just qual)) [] local
+    make (mod, source) = Types.ImportLine
+        { importDecl = mkImportDecl mod (Just qual)
+        , importComments = []
+        , importSource = source
+        }
 
 mkImportDecl :: Types.ModuleName -> Maybe Types.Qualification
     -> Types.ImportDecl
@@ -235,8 +308,8 @@ mkImportDecl (Types.ModuleName name) qualification = Haskell.ImportDecl
 noSpan :: Haskell.SrcSpanInfo
 noSpan = Haskell.noInfoSpan (Haskell.SrcSpan "" 0 0 0 0)
 
--- | Find the qualification and its ModuleName and True if it was a local
--- import.  Nothing if it wasn't found at all.
+-- | Find the qualification and its ModuleName and whether it was a Types.Local
+-- or Types.Package module.  Nothing if it wasn't found at all.
 findModule :: Monad m => Filesystem m -> Config.Config -> Index.Index
     -> FilePath -- ^ Path to the module being fixed.
     -> Types.Qualification -> m (Maybe (Types.ModuleName, Types.Source))
@@ -257,9 +330,9 @@ findModule fs config index modulePath qual = do
 -- include paths.
 findLocalModules :: Monad m => Filesystem m -> [FilePath]
     -> Types.Qualification -> m [FilePath]
-findLocalModules fs includes (Types.Qualification name) = do
-    concat <$> forM includes (\dir -> map (stripDir dir) <$>
-        findFiles fs 4 (Types.moduleToPath (Types.ModuleName name)) dir)
+findLocalModules fs includes (Types.Qualification name) =
+    fmap concat . forM includes $ \dir -> map (stripDir dir) <$>
+        findFiles fs 4 (Types.moduleToPath (Types.ModuleName name)) dir
 
 stripDir :: FilePath -> FilePath -> FilePath
 stripDir dir path
@@ -293,7 +366,11 @@ findImport fs index includes (imp, cmts) = do
     found <- findModuleName fs index includes (Types.importDeclModule imp)
     return $ case found of
         Nothing -> Nothing
-        Just source -> Just $ Types.ImportLine imp cmts source
+        Just source -> Just $ Types.ImportLine
+            { importDecl = imp
+            , importComments = cmts
+            , importSource = source
+            }
 
 -- | True if it was found in a local directory, False if it was found in the
 -- ghc package db, and Nothing if it wasn't found at all.
@@ -426,10 +503,16 @@ moduleQNames mod =
     | Haskell.Qual _ m _ <- Uniplate.universeBi mod
     ]
 
+moduleUnqualifieds :: Types.Module -> [Types.Name]
+moduleUnqualifieds mod =
+    [name | Haskell.UnQual _ name <- Uniplate.universeBi mod]
+
 -- * metrics
 
-metric :: Text -> IO Metric
-metric name = flip (,) name <$> Clock.getCurrentTime
+metric :: DeepSeq.NFData a => a -> Text -> IO Metric
+metric val name = do
+    force val
+    flip (,) name <$> Clock.getCurrentTime
 
 showMetrics :: [Metric] -> Text
 showMetrics = Text.unlines . format . map diff . Util.zipPrev . Util.sortOn fst
@@ -444,6 +527,9 @@ showMetrics = Text.unlines . format . map diff . Util.zipPrev . Util.sortOn fst
         ]
     diff ((prev, _), (cur, metric)) =
         (metric, cur `Clock.diffUTCTime` prev)
+
+force :: DeepSeq.NFData a => a -> IO ()
+force x = DeepSeq.rnf x `seq` return ()
 
 percent :: Double -> Text
 percent = (<>"%") . showt . isInt . round . (*100)
