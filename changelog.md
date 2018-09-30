@@ -1,3 +1,11 @@
+- add support for unqualified imports for explicitly configured symbols, via
+the `unqualified` field in `.fix-imports`
+
+- significant speed improvement, reuse the loaded pkg index instead of asking
+ghc-pkg find-module
+
+- --debug now emits timing metrics
+
 - import-order-{first,last} are exact matches, or are prefix matches if they
 have a trailing dot
 

@@ -1,17 +1,24 @@
 name: fix-imports
-version: 1.1.0
+version: 2.0.0
 cabal-version: >= 1.10
 build-type: Simple
 synopsis: Program to manage the imports of a haskell module
 description:
-    fix-imports is a small standalone program to manage the import block of a
-    haskell program.  It will try to add import lines for qualified names
-    with no corresponding import, remove unused import lines, and sort the
-    import block according to some heuristic you can define.  This only works
-    for qualified imports!  Unqualified imports are left untouched.
+    `fix-imports` is a small standalone program to manage the import block of
+    a haskell program.  It will try to add import lines for qualified names
+    with no corresponding import, remove unused import lines, and keep the
+    import block sorted, with optional rules for grouping.
     .
-    It's most convenient if bound to an editor key.  See the included vimrc
-    for an example.  You may have to cabal unpack or git clone to see it.
+    Support for unqualified imports is limited to symbols you explicitly
+    configure, so if you list `System.FilePath.(</>)`, it will add that import
+    when you use it, or remove when it's no longer used, but it won't go search
+    modules for unqualified imports.
+    .
+    It doesn't mess with non-managed unqualified imports, so you can still use
+    unqualified imports, you just have to do it manually.
+    .
+    Since it's a unix-style filter, it should be possible to integrate into any
+    editor.  There's an example vimrc to bind to a key in vim.
 
 category: Editor, Haskell, IDE
 license: BSD3
@@ -20,12 +27,11 @@ author: Evan Laforge
 maintainer: Evan Laforge <qdunkan@gmail.com>
 stability: stable
 tested-with: GHC>=8.0.2
-data-files: README, vimrc
 extra-source-files:
-    src/*.hs
+    README.md
     changelog.md
-    vimrc
     dot-fix-imports
+    vimrc
 
 source-repository head
     type: git
