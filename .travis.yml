@@ -26,33 +26,11 @@ before_cache:
 # Old-style cabal is sadly not smart enough to understand this.
 matrix:
   include:
-    # - compiler: "ghc-7.8.4"
-    #   env: GHC=7.8.4 CABALVER=2.0 ALEXVER=3.1.7
-    #   addons: {apt: {packages: [ghc-7.8.4, cabal-install-2.0], sources: [hvr-ghc]}}
-    #
-    # - compiler: "ghc-7.10.3"
-    #   env: GHC=7.10.3 CABALVER=2.0 ALEXVER=3.1.7
-    #   addons: {apt: {packages: [ghc-7.10.3, cabal-install-2.0], sources: [hvr-ghc]}}
-
-    - compiler: "ghc-8.0.2"
-      env: GHC=8.0.2 CABALVER=2.0 ALEXVER=3.1.7
+    - compiler: "ghc-8.4.2"
+      env: GHC=8.4.2 CABALVER=2.2 ALEXVER=3.1.7
       addons:
         apt:
-          packages: [ghc-8.0.2, cabal-install-2.0, happy-1.19.5]
-          sources: [hvr-ghc]
-
-    - compiler: "ghc-8.2.2"
-      env: GHC=8.2.2 CABALVER=2.0 ALEXVER=3.1.7
-      addons:
-        apt:
-          packages: [ghc-8.2.2, cabal-install-2.0, happy-1.19.5]
-          sources: [hvr-ghc]
-
-    - compiler: "ghc-8.4.1"
-      env: GHC=8.4.1 CABALVER=2.2 ALEXVER=3.1.7
-      addons:
-        apt:
-          packages: [ghc-8.4.1, cabal-install-2.2, happy-1.19.5]
+          packages: [ghc-8.4.2, cabal-install-2.2, happy-1.19.5]
           sources: [hvr-ghc]
 
     # async not updated for base-4.12
@@ -89,4 +67,3 @@ script:
   - cabal configure --enable-tests --disable-benchmarks
   - cabal build
   - cabal test
-  - (cd fix-imports-* && cabal check)
