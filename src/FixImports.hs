@@ -280,14 +280,21 @@ modifyImportSpecs modify decl = decl
     -- hiding should be False due to the match above.
     modifySpecs (Haskell.ImportSpecList span _hiding specs) =
         Haskell.ImportSpecList span False $ Set.toList $ Set.fromList $
-            map (Haskell.IVar noSpan) (doModify ivars)
-            ++ others
+            map makeVar (doModify vars) ++ others
         where
-        (ivars, others) = Util.partitionOn ivarOf specs
-        ivarOf (Haskell.IVar _ name) = Just name
-        ivarOf _ = Nothing
+        (vars, others) = Util.partitionOn varOf specs
+        varOf (Haskell.IVar _ name) = Just name
+        varOf (Haskell.IAbs _ (Haskell.NoNamespace _) name) = Just name
+        varOf _ = Nothing
     doModify = map addSpan . modify . map stripSpan
     noSpecs = Haskell.ImportSpecList noSpan False []
+    -- IAbs is constructors and classes, but I can disambiguate just by seeing
+    -- if it's capitalized.
+    makeVar name
+        | isCaps name = Haskell.IAbs noSpan (Haskell.NoNamespace noSpan) name
+        | otherwise = Haskell.IVar noSpan name
+    isCaps (Haskell.Ident _ name) = all Char.isUpper (take 1 name)
+    isCaps _ = False
 
 stripSpan :: Functor f => f Haskell.SrcSpanInfo -> f ()
 stripSpan = fmap (const ())

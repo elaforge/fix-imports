@@ -74,6 +74,11 @@ test_unqualified = do
         "import A.B (a)\n\
         \x = a\n"
         )
+    equal (run "unqualified: A.B.C" "import A.B (C)\nx :: C") $
+        Right ([], [],
+        "import A.B (C)\n\
+        \x :: C\n"
+        )
 
     -- local still goes below package
     equal (run "unqualified: C.a" "import A.B\nimport Z\nx = a") $

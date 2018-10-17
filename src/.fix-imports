@@ -1,1 +1,2 @@
 sort-unqualified-last: t
+unqualified: Data.Text.Text
