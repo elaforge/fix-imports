@@ -228,55 +228,71 @@ fixUnqualified :: Config.Config -> Types.Module -> [ImportLine]
     -> ([ImportLine], [ImportLine], [Types.ModuleName])
     -- ^ (modified, new, removed)
 fixUnqualified config mod imports =
-    remove . foldr fixReference (imports, []) . Map.toList $ references
+    -- Add new references.
+    -- Then filter out managed symbols which are no longer present.
+    -- Then delete empty imports which are now empty.
+    removeEmptyImports . first (map stripReferences)
+        . foldr addReferences (imports, []) . Map.toList $ references
     where
-    remove (modified, new) =
+    removeEmptyImports (modified, new) =
         (kept, new, map (Types.importDeclModule . fst) removed)
-        where (kept, removed) = List.partition (importUsed . fst) modified
+        where
+        (kept, removed) = List.partition (not . emptyImport . fst) modified
     references = unqualifiedImports config mod
-    importUsed decl = not (isUnqualifiedImport decl)
-        || Map.member name references
-        -- Only clear imports for explicitly listed unqualified imports that
-        -- have spec lists.
-        || Maybe.isNothing (Haskell.importSpecs decl)
-        || Set.notMember name managedModules
-        where name = Types.importDeclModule decl
-    fixReference (moduleName, names) (existing, new) =
-        case Util.modifyAt (matches moduleName . fst) fixSpecs existing of
+    emptyImport decl = and
+        [ Map.member moduleName moduleToNames
+        -- Can delete if it has an import list, but it's empty.
+        , hasEmptyImportList decl
+        ]
+        where moduleName = Types.importDeclModule decl
+
+    stripReferences (decl, cmts) =
+        ( modifyImportSpecs (filter (keep (Types.importDeclModule decl))) decl
+        , cmts
+        )
+        where
+        -- Keep if it's not managed, or it is managed and referenced.
+        keep moduleName name = not (isManaged moduleName name)
+            || maybe False (name `elem`) (Map.lookup moduleName references)
+    addReferences (moduleName, names) (existing, new) =
+        case Util.modifyAt (matches moduleName . fst) add existing of
             Nothing -> (existing, (newImport, []) : new)
             Just modified -> (modified, new)
         where
-        -- Replace only the specs that are configured to be automatically
-        -- managed.
-        fixSpecs = first $
-            modifyImportSpecs ((names++) . filter (not . isManaged))
+        add = first $ modifyImportSpecs (names++)
         newImport = modifyImportSpecs (names++) $
-            mkImportDecl moduleName Nothing
-        isManaged name = maybe False (name `elem`) $
-            Map.lookup moduleName moduleToNames
+            mkImportDecl moduleName Nothing True
     matches name decl = isUnqualifiedImport decl
         && Types.importDeclModule decl == name
     isUnqualifiedImport decl = not (Haskell.importQualified decl)
         && maybe True (not . importSpecsHiding) (Haskell.importSpecs decl)
 
-    -- Derived from Config._unqualified.
-    managedModules = Set.fromList $ Map.elems $ Config._unqualified config
+    isManaged moduleName name = maybe False (name `elem`) $
+        Map.lookup moduleName moduleToNames
     moduleToNames :: Map.Map Types.ModuleName [Haskell.Name ()]
     moduleToNames = Util.multimap . map Tuple.swap . Map.toList
         . Config._unqualified $ config
 
--- | Stupid undocumented field.
-importSpecsHiding :: Haskell.ImportSpecList l -> Bool
+-- | This field seems to be undocumented.
+importSpecsHiding :: Haskell.ImportSpecList a -> Bool
 importSpecsHiding (Haskell.ImportSpecList _ hiding _) = hiding
 
--- | I strip SrcSpanInfo from the Names because otherwise sorting and
--- unique'ing is too finicky.
+hasEmptyImportList :: Haskell.ImportDecl a -> Bool
+hasEmptyImportList decl = case Haskell.importSpecs decl of
+    Just (Haskell.ImportSpecList _ _ specs) -> null specs
+    Nothing -> False
+
+-- | If this import has a import list, modify its contents.
+--
+-- I strip SrcSpanInfo from the Names because otherwise sorting and unique'ing
+-- is too finicky.
 modifyImportSpecs :: ([Haskell.Name ()] -> [Haskell.Name ()])
     -> Types.ImportDecl -> Types.ImportDecl
-modifyImportSpecs modify decl = decl
-    { Haskell.importSpecs = Just $
-        modifySpecs $ Maybe.fromMaybe noSpecs (Haskell.importSpecs decl)
-    }
+modifyImportSpecs modify decl = case Haskell.importSpecs decl of
+    Just specs | not (importSpecsHiding specs) -> decl
+        { Haskell.importSpecs = Just $ modifySpecs specs
+        }
+    _ -> decl
     where
     -- hiding should be False due to the match above.
     modifySpecs (Haskell.ImportSpecList span _hiding specs) =
@@ -288,7 +304,6 @@ modifyImportSpecs modify decl = decl
         varOf (Haskell.IAbs _ (Haskell.NoNamespace _) name) = Just name
         varOf _ = Nothing
     doModify = map addSpan . modify . map stripSpan
-    noSpecs = Haskell.ImportSpecList noSpan False []
     -- IAbs is constructors and classes, but I can disambiguate just by seeing
     -- if it's capitalized.
     makeVar name
@@ -332,14 +347,14 @@ findNewImport fs config modulePath index qual =
     fmap make <$> findModule fs config index modulePath qual
     where
     make (mod, source) = Types.ImportLine
-        { importDecl = mkImportDecl mod (Just qual)
+        { importDecl = mkImportDecl mod (Just qual) False
         , importComments = []
         , importSource = source
         }
 
-mkImportDecl :: Types.ModuleName -> Maybe Types.Qualification
+mkImportDecl :: Types.ModuleName -> Maybe Types.Qualification -> Bool
     -> Types.ImportDecl
-mkImportDecl (Types.ModuleName name) qualification =
+mkImportDecl (Types.ModuleName name) qualification withImportList =
     Haskell.ImportDecl
         { Haskell.importAnn = noSpan
         , Haskell.importModule = Haskell.ModuleName noSpan name
@@ -348,7 +363,9 @@ mkImportDecl (Types.ModuleName name) qualification =
         , Haskell.importSafe = False
         , Haskell.importPkg = Nothing
         , Haskell.importAs = Haskell.ModuleName noSpan <$> importAs
-        , Haskell.importSpecs = Nothing
+        , Haskell.importSpecs = if withImportList
+            then Just $ Haskell.ImportSpecList noSpan False []
+            else Nothing
         }
     where
     importAs

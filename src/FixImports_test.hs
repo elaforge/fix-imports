@@ -51,6 +51,12 @@ test_simple = do
         \import qualified C\n\
         \x = (B.a, C.a, Z.a)\n"
 
+    -- Don't mess with imports I don't manage.
+    equal (run "" "import A.B hiding (mod)\n") $
+        Right "import A.B hiding (mod)\n"
+    equal (run "" "import A.B\n") $
+        Right "import A.B\n"
+
 test_qualifyAs = do
     let run config files = fmap eResult . fixModule index files config "A.hs"
         config = mkConfig "qualify-as: Data.Text.Lazy as DTL"
@@ -105,11 +111,18 @@ test_unqualified = do
         "import A.B (a)\n\
         \x = a\n"
         )
+    -- Don't accumulate duplicates.
+    equal (run "unqualified: A.B.c" "import A.B (c)\nx = c") $
+        Right ([], [], "import A.B (c)\nx = c\n")
     equal (run "unqualified: A.B.C" "import A.B (C)\nx :: C") $
         Right ([], [],
         "import A.B (C)\n\
         \x :: C\n"
         )
+
+    -- Don't manage it if it's not mine.
+    equal (run "unqualified: A.B.c" "import A.B (d)") $ Right
+        ([], [], "import A.B (d)\n")
 
     -- local still goes below package
     equal (run "unqualified: C.a" "import A.B\nimport Z\nx = a") $

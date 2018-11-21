@@ -1,9 +1,8 @@
 * done; - not done; / decided against
 
-
 bug:
   - unqualified imports cause imports due to symbols not in call position
-  - It wants to manage unqualified imports it shouldn't
+  * It wants to manage unqualified imports it shouldn't
     . if I have 'unqualified: Control.Monad.when', it will delete a
       'import Control.Monad (unless)'
 

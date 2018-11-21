@@ -3,7 +3,7 @@
     E.g. import Data.Text.Lazy as DTL, instead of always having to qualify
     as a suffix, like Lazy, or Text.Lazy.
 
-- fix a bug where unqualified type imports would get duplicated
+- various bugs with unqualified imports
 
 #### 2.0.0
 
