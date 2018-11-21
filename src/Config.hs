@@ -5,6 +5,7 @@
 {-# OPTIONS_GHC -Wno-partial-type-signatures #-}
 module Config where
 import qualified Data.Bifunctor as Bifunctor
+import Data.Bifunctor (second)
 import qualified Data.Either as Either
 import qualified Data.List as List
 import qualified Data.Map as Map
@@ -36,6 +37,8 @@ data Config = Config {
     , _modulePriority :: Priorities
     -- | Map unqualified names to the module to import for them.
     , _unqualified :: Map.Map (Haskell.Name ()) Types.ModuleName
+    -- import-as: Data.Text.Lazy as DTL -> Map DTL Data.Text.Lazy
+    , _qualifyAs :: Map.Map Types.Qualification Types.Qualification
     , _debug :: Bool
     } deriving (Eq, Show)
 
@@ -52,8 +55,18 @@ data Priorities = Priorities {
     , prioModule :: Priority Types.ModuleName
     } deriving (Eq, Show)
 
+instance Semigroup Priorities where
+    Priorities a1 b1 <> Priorities a2 b2 = Priorities (a1<>a2) (b1<>b2)
+instance Monoid Priorities where
+    mempty = Priorities mempty mempty
+
 data Priority a = Priority { high :: [a], low :: [a] }
     deriving (Eq, Show)
+
+instance Semigroup (Priority a) where
+    Priority a1 b1 <> Priority a2 b2 = Priority (a1<>a2) (b1<>b2)
+instance Monoid (Priority a) where
+    mempty = Priority mempty mempty
 
 -- | A simple pattern: @M.@ matches M and M.*.  Anything else matches exactly.
 type ModulePattern = String
@@ -72,8 +85,9 @@ empty = Config
         { _importOrder = Priority { high = [], low = [] }
         , _sortUnqualifiedLast = False
         }
-    , _modulePriority = defaultPriorities
+    , _modulePriority = mempty
     , _unqualified = mempty
+    , _qualifyAs = mempty
     , _debug = False
     }
 
@@ -92,6 +106,9 @@ parse text = (config, errors)
           ]
         , [ "unqualified: " <> commas unknownUnqualified
           | not (null unknownUnqualified)
+          ]
+        , [ "qualify-as: " <> commas unknownQualifyAs
+          | not (null unknownQualifyAs)
           ]
         ]
     config = empty
@@ -115,10 +132,13 @@ parse text = (config, errors)
                 }
             }
         , _unqualified = Map.fromList $ map Tuple.swap unqualified
+        , _qualifyAs = qualifyAs
         }
     (unknownUnqualified, unqualified) = Either.partitionEithers $
         map parseUnqualified (get "unqualified")
     (unknownLanguage, language) = parseLanguage (get "language")
+    (unknownQualifyAs, qualifyAs) =
+        parseQualifyAs $ Text.unwords $ map Text.pack $ get "qualify-as"
     unknownFields = Map.keys fields List.\\ valid
     valid =
         [ "include"
@@ -128,6 +148,7 @@ parse text = (config, errors)
         , "prio-module-high", "prio-module-low"
         , "sort-unqualified-last"
         , "unqualified"
+        , "qualify-as"
         ]
     fields = Map.fromList
         [ (section, map Text.unpack words)
@@ -154,6 +175,22 @@ parseUnqualified sym = case hasParens name of
         Bifunctor.bimap reverse (Types.ModuleName . reverse . drop 1) $
         break (=='.') $ reverse sym
 
+-- |
+-- "A.B as AB, C as E" -> [("AB", "A.B"), ("E", "C")]
+parseQualifyAs :: Text
+    -> ([Text], Map.Map Types.Qualification Types.Qualification)
+parseQualifyAs field
+    | Text.null field = ([], mempty)
+    | otherwise = second Map.fromList . Either.partitionEithers
+        . map (parse . Text.words) . Text.splitOn "," $ field
+    where
+    parse [module_, "as", alias] = Right
+        ( Types.Qualification (Text.unpack alias)
+        , Types.Qualification (Text.unpack module_)
+        )
+    parse ws = Left $ "stanza should look like 'ModuleName as X':"
+        <> Text.unwords ws
+
 hasParens :: String -> Maybe String
 hasParens s
     | "(" `List.isPrefixOf` s && ")" `List.isSuffixOf` s =
@@ -166,23 +203,6 @@ parseLanguage = Either.partitionEithers . map parse
     parse w = case Extension.parseExtension w of
         Extension.UnknownExtension _ -> Left w
         ext -> Right ext
-
-defaultPriorities :: Priorities
-defaultPriorities = Priorities
-    -- Make some common packages low priority so their exports don't get
-    -- chosen over what you probably wanted:
-    -- haskell98 has obsolete toplevel module names.
-    -- ghc exports tons of toplevel modules that you probably don't want.
-    -- Cabal is probably mostly used in Setup.hs and exports Distribution.Text.
-    { prioPackage = Priority
-        { high = []
-        , low = ["haskell98", "ghc", "Cabal"]
-        }
-    , prioModule = Priority
-        { high = map Types.ModuleName []
-        , low = map Types.ModuleName ["GHC"]
-        }
-    }
 
 -- * pick candidates
 

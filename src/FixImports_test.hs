@@ -51,6 +51,37 @@ test_simple = do
         \import qualified C\n\
         \x = (B.a, C.a, Z.a)\n"
 
+test_qualifyAs = do
+    let run config files = fmap eResult . fixModule index files config "A.hs"
+        config = mkConfig "qualify-as: Data.Text.Lazy as DTL"
+        index = Index.makeIndex [("text", ["Data.Text.Lazy"])]
+    equal (run config [] "x = DTL.y") $ Right
+        ( ["Data.Text.Lazy"]
+        , []
+        , "import qualified Data.Text.Lazy as DTL\nx = DTL.y\n"
+        )
+    equal (run config [] "import qualified Data.Text.Lazy as DTL\n") $ Right
+        ( []
+        , ["Data.Text.Lazy"]
+        , ""
+        )
+
+    -- qualifyAs aliases are prioritized in the same way as others, so
+    -- the local module wins:
+    equal (run config ["DTL.hs"] "x = DTL.y") $
+        Right (["DTL"], [], "import qualified DTL\nx = DTL.y\n")
+
+    -- Unless explicitly suppressed:
+    let config2 = mkConfig $ Text.unlines
+            [ "qualify-as: Data.Text.Lazy as DTL"
+            , "prio-module-high: Data.Text.Lazy"
+            ]
+    equal (run config2 ["DTL.hs"] "x = DTL.y") $ Right
+        ( ["Data.Text.Lazy"]
+        , []
+        , "import qualified Data.Text.Lazy as DTL\nx = DTL.y\n"
+        )
+
 test_unqualified = do
     let run config = fmap eResult
             . fixModule index ["C.hs"] (mkConfig config) "A.hs"
@@ -103,7 +134,6 @@ test_unqualified = do
     -- But not if it's a spec-less import.
     equal (run "unqualified: A.B.c" "import A.B\nx = x\n") $
         Right ([], [], "import A.B\nx = x\n")
-
 
 eResult :: FixImports.Result -> ([Types.ModuleName], [Types.ModuleName], String)
 eResult r =

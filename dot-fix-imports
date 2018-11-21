@@ -19,7 +19,7 @@ import-order-last: Global
 -- They should be special, and this helps them stand out.
 sort-unqualified-last: t
 
--- When there are multiple candidates for a module, prefer (or ignore)
+-- When there are multiple candidates for a module, prefer or don't prefer
 -- ones from these lists.  These are exact matches:
 prio-module-high: Ui
 prio-module-low: GHC
@@ -32,6 +32,9 @@ prio-package-low: haskell98 ghc Cabal
 
 -- Manage these symbols as unqualified imports.  Use ()s for operators.
 unqualified: Data.Bifunctor.first Data.Bifunctor.second System.FilePath.(</>)
+
+-- DTL.something will turn into a search for Data.Text.Lazy.
+qualify-as: Data.Text.Lazy as DTL
 
 -- Otherwise, the module with the least number of dots is picked.  Usually
 -- packages put the most "public" modules at the top, e.g. IO should choose

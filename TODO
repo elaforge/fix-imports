@@ -1,88 +1,58 @@
 * done; - not done; / decided against
 
-- Support unqualified imports of constructors, e.g. Data.Either.Either(Right)
 
-- I could add multiple imports by adding the non-prioritized ones as comments.
-  . But this will be annoying in the common case where prioritization works.
-    Maybe only for local imports?  Or local imports where there isn't an
-    obvious winner, where obvious winner means in the same directory?
+bug:
+  - unqualified imports cause imports due to symbols not in call position
+  - It wants to manage unqualified imports it shouldn't
+    . if I have 'unqualified: Control.Monad.when', it will delete a
+      'import Control.Monad (unless)'
 
-* I could have hard-coded one-offs for common unqualified imports,
-  e.g. (</>) -> System.FilePath ((</>))
-  . I'd need to start looking at unqualified symbols, and then I need to know
-    if they are in scope or not.
-  . Get non-Qual: UnQual l (Name l)
-  . Then instead of the Index, I have a unqualified Index directly from the
-    config file.
-  . Generate or modify unqualified import lines.
-  . Config syntax:
-    unqualified: System.FilePath.(</>) System.FilePath.takeFileName
-  . I need the parens because import syntax requires them.  They correspond to
-    Symbol Names.
+feature:
+  - Support unqualified imports of constructors, e.g. Data.Either.Either(Right)
+  - I could add multiple imports by adding the non-prioritized ones as comments.
+    . But this will be annoying in the common case where prioritization works.
+      Maybe only for local imports?  Or local imports where there isn't an
+      obvious winner, where obvious winner means in the same directory?
 
-* remove unused unqualified imports, possibly just the ones in the unqualified
-list
+  - unqualified syntax sugar: Data.Bifunctor.(first,second)
+  groq style:
+    - space for qualified
+    * import qualified as some other name, e.g.
+      . import-as: Data.Text.Lazy as DTL, ...
+    - disable automatic grouping, just [hackage, local]
 
-* Synth.Sampler.Render gets Statistics.Sample instead of local
-  Synth.Sampler.Sample
-  . findModule Qualification "Sample": local ["Synth/Sampler/Sample.hs"]
-    findModule Qualification "Sample":
-      package [(Just "statistics",ModuleName "Statistics.Sample")]
+  - add *all* possible imports, but comment out all but the priority one
+    . This seems not great because much of the time it guesses right.
 
-* import-order-last: Synth.Lib.Global doesn't work
-  . Maybe it just does first match, not most specific match?
-  . Because order only expects toplevel name.
-  . I can generalize to longest prefix match.
-  . Supporting .Global means I could put Global modules at the end.
-    Or I could say an unqualified import without a corresponding qualified one
-    goes at the end?
+  - Use a cabal sandbox if one is present.
+  - use stack if present
+    . I think just:
+      if [ $use_stack ]; then
+          export GHC_PACKAGE_PATH=$(stack path --ghc-package-path)
+          PATH=$(stack path --compiler-bin):$PATH
+      fi
 
-* putting Data.Map in prio-module-high also makes everything under Data.Map
-  high prio.  Then I get Data.Map.Internal.Debug over Util.Debug.
-  . I could do exact matches, but say Synth. is a shorthand for
-    (Synth|Synth\..*).
-  . Actually why not just always do exact matches for prio-module?
-    I think I did prefixes because I wanted 'prio-module-low: GHC' to not
-    resolve any GHC.* modules.  But surely 'prio-package-low: ghc' handles
-    that?
+  - haskell-src-exts is buggy.  Can I use the ghc parser yet?
+    . ghc-parser package?
+    . But I thought this was tied to the trees that grow changes?
+    . ghc-syntax-highlighter - uses lexer?
 
-- Use a cabal sandbox if one is present.
-- use stack if present
-  . I think just:
-    if [ $use_stack ]; then
-        export GHC_PACKAGE_PATH=$(stack path --ghc-package-path)
-        PATH=$(stack path --compiler-bin):$PATH
-    fi
+  / Optionally write a cache of the package db.
+    . No need, most time is spent in haskell-src-exts parsing.
+    . Actually not really, but overall time is low.
 
-- haskell-src-exts is buggy.  Can I use the ghc parser yet?
-  . ghc-parser package?
-  . But I thought this was tied to the trees that grow changes?
-  . ghc-syntax-highlighter - uses lexer?
+  - Use haskell-names to guess the module to import based on the function name:
+    http://documentup.com/haskell-suite/haskell-names
+    This could even potentially support unqualified imports.
 
-/ Optionally write a cache of the package db.
-  . No need, most time is spent in haskell-src-exts parsing.
+  / Didn't want to import Ui.Types when I already have Types imported
+  unqualified.
+    I think this is working as intended, because an unqualified import can also
+    be used qualified.
 
-- Use haskell-names to guess the module to import based on the function name:
-  http://documentup.com/haskell-suite/haskell-names
-  This could even potentially support unqualified imports.
+  - If the choice is still ambiguous I could ask interactively.
+    . This requires deeper integration, but vim does have menu selection
+      support.
 
-/ Didn't want to import Ui.Types when I already have Types imported
-unqualified.
-  I think this is working as intended, because an unqualified import can also
-  be used qualified.
-
-* If I set Util.Map in prio-module-low or Data.Map in prio-module-high, why
-does Util.Map still get imported?  It's because local modules are always
-prioritized above package ones.  To fix this I could have a ad-hoc map of e.g.
-'Map -> Data.Map' to manually set certain resolutions.
-  . Or, why not just make local vs global only apply when not in
-    prio-module-high or prio-module-low.
-  . I think I just change the order in Config.prioritize.  Could it be that
-    simple?
-
-- If the choice is still ambiguous I could ask interactively.
-  . This requires deeper integration, but vim does have menu selection
-    support.
-
-- Or write a simple tool to analyze existing code and assign priorities
-  based on how often each is imported.
+  - Or write a simple tool to analyze existing code and assign priorities
+    based on how often each is imported.

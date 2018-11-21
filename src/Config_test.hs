@@ -14,6 +14,7 @@ import qualified Types
 
 test_parse = do
     let f = parseConfig
+    equal (f []) Config.empty
     equal (Config._order $
             f ["import-order-first: A", "import-order-last: B"]) $
         Config.Order
@@ -31,6 +32,15 @@ test_unqualified = do
         [ (Haskell.Ident () "c", "A.B")
         , (Haskell.Ident () "d", "A.B")
         ]
+
+test_parseQualifyAs = do
+    let f = Config._qualifyAs . parseConfig
+    equal (f ["qualify-as: A.B as AB, E as F"]) $ Map.fromList
+        [ ("AB", "A.B")
+        , ("F", "E")
+        ]
+    stringsLike (snd $ Config.parse "qualify-as: gibble gabble")
+        ["stanza should look like"]
 
 test_pickModule = do
     let f config modulePath candidates = Config.pickModule

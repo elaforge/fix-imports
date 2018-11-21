@@ -34,10 +34,11 @@
         first dot).  Small groups are combined.  They go in alphabetical order
         by default, but a per-project order may be defined.
 -}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DisambiguateRecordFields #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE TupleSections #-}
 module FixImports where
 import Prelude hiding (mod)
 import Control.Applicative ((<$>))
@@ -338,20 +339,21 @@ findNewImport fs config modulePath index qual =
 
 mkImportDecl :: Types.ModuleName -> Maybe Types.Qualification
     -> Types.ImportDecl
-mkImportDecl (Types.ModuleName name) qualification = Haskell.ImportDecl
-    { Haskell.importAnn = noSpan
-    , Haskell.importModule = Haskell.ModuleName noSpan name
-    , Haskell.importQualified = Maybe.isJust qualification
-    , Haskell.importSrc = False
-    , Haskell.importSafe = False
-    , Haskell.importPkg = Nothing
-    , Haskell.importAs = importAs
-    , Haskell.importSpecs = Nothing
-    }
+mkImportDecl (Types.ModuleName name) qualification =
+    Haskell.ImportDecl
+        { Haskell.importAnn = noSpan
+        , Haskell.importModule = Haskell.ModuleName noSpan name
+        , Haskell.importQualified = Maybe.isJust qualification
+        , Haskell.importSrc = False
+        , Haskell.importSafe = False
+        , Haskell.importPkg = Nothing
+        , Haskell.importAs = Haskell.ModuleName noSpan <$> importAs
+        , Haskell.importSpecs = Nothing
+        }
     where
     importAs
-        | Just (Types.Qualification q) <- qualification, q /= name =
-            Just $ Haskell.ModuleName noSpan q
+        -- | Just (Types.Qualification importAs) <- mbImportAs = Just importAs
+        | Just (Types.Qualification q) <- qualification, q /= name = Just q
         | otherwise = Nothing
 
 noSpan :: Haskell.SrcSpanInfo
@@ -363,9 +365,12 @@ findModule :: Monad m => Filesystem m -> Config.Config -> Index.Index
     -> FilePath -- ^ Path to the module being fixed.
     -> Types.Qualification -> m (Maybe (Types.ModuleName, Types.Source))
 findModule fs config index modulePath qual = do
-    found <- findLocalModules fs (Config._includes config) qual
-    let local = [(Nothing, Types.pathToModule fn) | fn <- found]
-        package = map (first Just) $ Map.findWithDefault [] qual index
+    local <- map fnameToModule <$> ((++)
+        <$> findLocalModules fs (Config._includes config) qual
+        <*> maybe (pure []) (findLocalModules fs (Config._includes config))
+            qualifyAs)
+    let package = map (first Just) $
+            findPackageModules qual ++ maybe [] findPackageModules qualifyAs
     -- Config.debug config $ "findModule " <> showt qual <> " from "
     --     <> showt modulePath <> ": local " <> showt found
     --     <> "\npackage: " <> showt package
@@ -374,6 +379,13 @@ findModule fs config index modulePath qual = do
         Just (package, mod) -> Just
             (mod, if package == Nothing then Types.Local else Types.Package)
         Nothing -> Nothing
+    where
+    findPackageModules q = Map.findWithDefault [] q index
+    fnameToModule fn = (Nothing, Types.pathToModule fn)
+    qualifyAs = Map.lookup qual (Config._qualifyAs config)
+
+-- If it's in Config._qualifyAs, then I also search for exactly that module
+-- name.
 
 -- | Given A.B, look for A/B.hs, */A/B.hs, */*/A/B.hs, etc. in each of the
 -- include paths.
