@@ -1,5 +1,5 @@
 name: fix-imports
-version: 2.0.0
+version: 2.1.0
 cabal-version: >= 1.10
 build-type: Simple
 synopsis: Program to manage the imports of a haskell module
@@ -39,7 +39,9 @@ source-repository head
 
 executable fix-imports
     main-is: Main.hs
-    other-modules: Config, FixImports, Index, Types, Util
+    other-modules:
+        Config FixImports Index Types Util
+        Paths_fix_imports
     hs-source-dirs: src
     default-language: Haskell2010
     build-depends:

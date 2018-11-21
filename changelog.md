@@ -1,3 +1,5 @@
+### 2.1.0 - unreleased
+
 - add import-as config option
 
     E.g. import Data.Text.Lazy as DTL, instead of always having to qualify

@@ -11,6 +11,7 @@ import Control.Monad (when)
 import qualified Data.Set as Set
 import qualified Data.Text as Text
 import qualified Data.Text.IO as Text.IO
+import qualified Data.Version as Version
 
 import qualified System.Console.GetOpt as GetOpt
 import qualified System.Environment as Environment
@@ -19,6 +20,7 @@ import qualified System.IO as IO
 
 import qualified Config
 import qualified FixImports
+import qualified Paths_fix_imports
 import qualified Types
 import qualified Util
 
@@ -85,6 +87,7 @@ usage msg = do
     name <- Environment.getProgName
     putStr $ GetOpt.usageInfo (msg ++ "\n" ++ name ++ " Module.hs <Module.hs")
         options
+    putStrLn $ "version: " ++ Version.showVersion Paths_fix_imports.version
     Exit.exitFailure
 
 parseArgs :: [String] -> IO (String, (Bool, Bool, [FilePath]))
