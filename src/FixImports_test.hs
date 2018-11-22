@@ -95,37 +95,37 @@ test_unqualified = do
             [ ("pkg", ["A.B"])
             , ("zpkg", ["Z"])
             ]
-    equal (run "unqualified: A.B.c" "x = (c, c)") $ Right (["A.B"], [],
+    equal (run "unqualified: A.B (c)" "x = (c, c)") $ Right (["A.B"], [],
         "import A.B (c)\n\
         \x = (c, c)\n"
         )
 
     -- Modify an existing import.
-    equal (run "unqualified: A.B.c" "import A.B (a, z)\nx = (c, c)") $
+    equal (run "unqualified: A.B (c)" "import A.B (a, z)\nx = (c, c)") $
         Right ([], [],
         "import A.B (a, c, z)\n\
         \x = (c, c)\n"
         )
-    equal (run "unqualified: A.B.c A.B.a" "import A.B (a, c)\nx = a") $
+    equal (run "unqualified: A.B (a, c)" "import A.B (a, c)\nx = a") $
         Right ([], [],
         "import A.B (a)\n\
         \x = a\n"
         )
     -- Don't accumulate duplicates.
-    equal (run "unqualified: A.B.c" "import A.B (c)\nx = c") $
+    equal (run "unqualified: A.B (c)" "import A.B (c)\nx = c") $
         Right ([], [], "import A.B (c)\nx = c\n")
-    equal (run "unqualified: A.B.C" "import A.B (C)\nx :: C") $
+    equal (run "unqualified: A.B (C)" "import A.B (C)\nx :: C") $
         Right ([], [],
         "import A.B (C)\n\
         \x :: C\n"
         )
 
     -- Don't manage it if it's not mine.
-    equal (run "unqualified: A.B.c" "import A.B (d)") $ Right
+    equal (run "unqualified: A.B (c)" "import A.B (d)") $ Right
         ([], [], "import A.B (d)\n")
 
     -- local still goes below package
-    equal (run "unqualified: C.a" "import A.B\nimport Z\nx = a") $
+    equal (run "unqualified: C (a)" "import A.B\nimport Z\nx = a") $
         Right (["C"], [],
         "import A.B\n\
         \import Z\n\
@@ -135,17 +135,17 @@ test_unqualified = do
         )
 
     -- Don't import when it's an assignee.
-    equal (run "unqualified: A.B.c" "c = x") $ Right ([], [], "c = x\n")
-    equal (run "unqualified: A.B.(</>)" "x = a </> b") $ Right (["A.B"], [],
+    equal (run "unqualified: A.B (c)" "c = x") $ Right ([], [], "c = x\n")
+    equal (run "unqualified: A.B ((</>))" "x = a </> b") $ Right (["A.B"], [],
         "import A.B ((</>))\n\
         \x = a </> b\n"
         )
 
     -- Removed unused.
-    equal (run "unqualified: A.B.c" "import A.B (c)\nx = x\n") $
+    equal (run "unqualified: A.B (c)" "import A.B (c)\nx = x\n") $
         Right ([], ["A.B"], "x = x\n")
     -- But not if it's a spec-less import.
-    equal (run "unqualified: A.B.c" "import A.B\nx = x\n") $
+    equal (run "unqualified: A.B (c)" "import A.B\nx = x\n") $
         Right ([], [], "import A.B\nx = x\n")
 
 eResult :: FixImports.Result -> ([Types.ModuleName], [Types.ModuleName], String)

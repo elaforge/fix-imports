@@ -35,7 +35,8 @@ prio-package-low: haskell98 ghc Cabal
 -- IO should choose System.IO, not Data.Text.Lazy.IO
 
 -- Manage these symbols as unqualified imports.  Use ()s for operators.
-unqualified: Data.Bifunctor.first Data.Bifunctor.second System.FilePath.(</>)
+-- The syntax is meant to resemble import syntax, separated by semicolons:
+unqualified: Data.Bifunctor (first, second); System.FilePath ((</>))
 
 -- DTL.something will turn into a search for Data.Text.Lazy.
 qualify-as: Data.Text.Lazy as DTL

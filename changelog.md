@@ -1,5 +1,7 @@
 ### 2.1.0 - unreleased
 
+- unqualified syntax changed to support multiple imports per module
+
 - add format: leave-space-for-qualified
 
 - add import-as config option

@@ -22,15 +22,19 @@ test_parse = do
             , _sortUnqualifiedLast = False
             }
 
-test_unqualified = do
+test_parseUnqualified = do
     let f = Config._unqualified . parseConfig
-    equal (f ["unqualified: A.B.c D.E.(+)"]) $ Map.fromList
+    equal (f ["unqualified: A.B (c); D.E ((+))"]) $ Map.fromList
         [ (Haskell.Ident () "c", "A.B")
         , (Haskell.Symbol () "+", "D.E")
         ]
-    equal (f ["unqualified: A.B.c A.B.d"]) $ Map.fromList
+    equal (f ["unqualified: A.B(c, d)"]) $ Map.fromList
         [ (Haskell.Ident () "c", "A.B")
         , (Haskell.Ident () "d", "A.B")
+        ]
+    equal (f ["unqualified: A.B (c,(+))"]) $ Map.fromList
+        [ (Haskell.Ident () "c", "A.B")
+        , (Haskell.Symbol () "+", "A.B")
         ]
 
 test_parseQualifyAs = do

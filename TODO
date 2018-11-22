@@ -1,19 +1,17 @@
 * done; - not done; / decided against
 
 bug:
+  - warn about duplicate config entries
   - unqualified imports cause imports due to symbols not in call position
   * It wants to manage unqualified imports it shouldn't
     . if I have 'unqualified: Control.Monad.when', it will delete a
       'import Control.Monad (unless)'
 
 feature:
-  - Support unqualified imports of constructors, e.g. Data.Either.Either(Right)
-  - I could add multiple imports by adding the non-prioritized ones as comments.
-    . But this will be annoying in the common case where prioritization works.
-      Maybe only for local imports?  Or local imports where there isn't an
-      obvious winner, where obvious winner means in the same directory?
-
-  - unqualified syntax sugar: Data.Bifunctor (first, second)
+  * unqualified syntax sugar: Data.Bifunctor.(first, second)
+    . Unfortunately this is ambiguous with operators: A.(+).
+    . I could imitate import syntax: A (b); C ((+), d)
+      But I need to separate with something, like ;.
   groq style:
     * space for qualified
     * import qualified as some other name, e.g.
@@ -22,6 +20,9 @@ feature:
 
   - add *all* possible imports, but comment out all but the priority one
     . This seems not great because much of the time it guesses right.
+    . Then I need some notion of certainty.
+    . Maybe only for local imports?  Or local imports where there isn't an
+      obvious winner, where obvious winner means in the same directory?
 
   - Use a cabal sandbox if one is present.
   - use stack if present

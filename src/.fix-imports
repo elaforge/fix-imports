@@ -1,6 +1,3 @@
-unqualified: Data.Bifunctor.second Data.Bifunctor.first Data.Bifunctor.bimap
+unqualified: Data.Text (Text); Data.Bifunctor (bimap, first, second)
 prio-module-high: EL.Debug
 sort-unqualified-last: t
-unqualified: Data.Text.Text
-
-format: leave-space-for-qualified

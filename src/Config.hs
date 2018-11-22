@@ -5,8 +5,9 @@
 {-# LANGUAGE PartialTypeSignatures #-} -- sort keys only care about Ord
 {-# OPTIONS_GHC -Wno-partial-type-signatures #-}
 module Config where
-import qualified Data.Bifunctor as Bifunctor
+import Control.Monad (unless)
 import Data.Bifunctor (second)
+import qualified Data.Char as Char
 import qualified Data.Either as Either
 import qualified Data.List as List
 import qualified Data.Map as Map
@@ -114,8 +115,7 @@ parse text = (config, errors)
         [ [ "unrecognized fields: " <> commas unknownFields
           | not (null unknownFields)
           ]
-        , [ "unknown language extensions: "
-            <> commas (map Text.pack unknownLanguage)
+        , [ "unknown language extensions: " <> commas unknownLanguage
           | not (null unknownLanguage)
           ]
         , [ "unqualified: " <> commas unknownUnqualified
@@ -127,19 +127,19 @@ parse text = (config, errors)
         , maybe [] ((:[]) . ("format: "<>)) formatError
         ]
     config = empty
-        { _includes = get "include"
+        { _includes = getStrings "include"
         , _language = language
         , _order = Order
             { _importOrder = Priority
-                { high = get "import-order-first"
-                , low = get "import-order-last"
+                { high = getStrings "import-order-first"
+                , low = getStrings "import-order-last"
                 }
             , _sortUnqualifiedLast = getBool "sort-unqualified-last"
             }
         , _modulePriority = Priorities
             { prioPackage = Priority
-                { high = get "prio-package-high"
-                , low = get "prio-package-low"
+                { high = getStrings "prio-package-high"
+                , low = getStrings "prio-package-low"
                 }
             , prioModule = Priority
                 { high = getModules "prio-module-high"
@@ -151,11 +151,11 @@ parse text = (config, errors)
         , _qualifyAs = qualifyAs
         }
     (unknownUnqualified, unqualified) = Either.partitionEithers $
-        map parseUnqualified (get "unqualified")
+        parseUnqualified (Text.unwords (get "unqualified"))
     (unknownLanguage, language) = parseLanguage (get "language")
     (unknownQualifyAs, qualifyAs) =
-        parseQualifyAs $ Text.unwords $ map Text.pack $ get "qualify-as"
-    (format, formatError) = case parseFormat (getWords "format") of
+        parseQualifyAs $ Text.unwords $ get "qualify-as"
+    (format, formatError) = case parseFormat (get "format") of
         Right format -> (format, Nothing)
         Left err -> (Standard, Just err)
     unknownFields = Map.keys fields List.\\ valid
@@ -171,15 +171,15 @@ parse text = (config, errors)
         , "unqualified"
         ]
     fields = Map.fromList
-        [ (section, map Text.unpack words)
+        [ (section, words)
         | (section, words) <- Index.parseSections text
         ]
-    getModules = map Types.ModuleName . get
+    getModules = map (Types.ModuleName . Text.unpack) . get
     get k = Map.findWithDefault [] k fields
-    getWords = words . unwords . get
+    getStrings = map Text.unpack . get
     getBool k = k `Map.member` fields
 
-parseFormat :: [String] -> Either Text Format
+parseFormat :: [Text] -> Either Text Format
 parseFormat = \case
     ["leave-space-for-qualified"] -> Right $ Custom $ PPConfig
         { _leaveSpaceForQualified = True }
@@ -187,21 +187,41 @@ parseFormat = \case
     ws -> Left $ "unrecognized words: " <> Text.pack (show ws)
 
 -- |
--- "A.B.c" -> (Haskell.Ident () "c", "A.B")
--- "A.B.(+)" -> (Haskell.Symbol () "+", "A.B")
-parseUnqualified :: String -> Either Text (Types.ModuleName, Haskell.Name ())
-parseUnqualified sym = case hasParens name of
-    Just op
-        | all Util.haskellOpChar op -> Right (module_, Haskell.Symbol () op)
-        | otherwise -> Left $ "non-symbols in operator: " <> Text.pack sym
-    Nothing
-        | all (not . Util.haskellOpChar) name ->
-            Right (module_, Haskell.Ident () name)
-        | otherwise -> Left $ "symbol char in id, use parens: " <> Text.pack sym
+-- "A.B(c); Q(r)" -> [Right ("A.B", "c"), Right ("Q", "r")]
+parseUnqualified :: Text
+    -> [Either Text (Types.ModuleName, Haskell.Name ())]
+parseUnqualified = concatMap (parse . Text.break (=='('))  . Text.splitOn ";"
     where
-    (name, module_) =
-        Bifunctor.bimap reverse (Types.ModuleName . reverse . drop 1) $
-        break (=='.') $ reverse sym
+    parse (pre, post)
+        | Text.null pre && Text.null post = []
+        | Text.null pre = [Left $ "no module name before " <> showt post]
+        | Text.null post = [Left $ "no import after " <> showt pre]
+        | Just imports <- hasParens post =
+            map (parseUnqualifiedImport (Text.strip pre))
+                (map Text.strip (Text.splitOn "," imports))
+        | otherwise = [Left $ "expected parens: " <> showt post]
+
+-- |
+-- "A.B" "(c)" -> (Haskell.Ident () "c", "A.B")
+-- "A.B" "((+))" -> (Haskell.Symbol () "+", "A.B")
+parseUnqualifiedImport :: Text -> Text
+    -> Either Text (Types.ModuleName, Haskell.Name ())
+parseUnqualifiedImport pre post = do
+    unless (Text.all isModuleChar pre) $
+        Left $ "this doesn't look like a module name: " <> showt pre
+    let module_ = Types.ModuleName (Text.unpack pre)
+    case hasParens post of
+        Just op
+            | Text.all Util.haskellOpChar op ->
+                Right (module_, Haskell.Symbol () (Text.unpack op))
+            | otherwise -> Left $ "non-symbols in operator: " <> showt post
+        Nothing
+            | Text.all (not . Util.haskellOpChar) post ->
+                Right (module_, Haskell.Ident () (Text.unpack post))
+            | otherwise ->
+                Left $ "symbol char in id, use parens: " <> showt post
+    where
+    isModuleChar c = Char.isLetter c || Char.isDigit c || c == '.'
 
 -- |
 -- "A.B as AB, C as E" -> [("AB", "A.B"), ("E", "C")]
@@ -219,16 +239,16 @@ parseQualifyAs field
     parse ws = Left $ "stanza should look like 'ModuleName as X':"
         <> Text.unwords ws
 
-hasParens :: String -> Maybe String
+hasParens :: Text -> Maybe Text
 hasParens s
-    | "(" `List.isPrefixOf` s && ")" `List.isSuffixOf` s =
-        Just $ take (length s - 2) (drop 1 s)
+    | "(" `Text.isPrefixOf` s && ")" `Text.isSuffixOf` s =
+        Just $ Text.drop 1 $ Text.dropEnd 1 s
     | otherwise = Nothing
 
-parseLanguage :: [String] -> ([String], [Extension.Extension])
+parseLanguage :: [Text] -> ([Text], [Extension.Extension])
 parseLanguage = Either.partitionEithers . map parse
     where
-    parse w = case Extension.parseExtension w of
+    parse w = case Extension.parseExtension (Text.unpack w) of
         Extension.UnknownExtension _ -> Left w
         ext -> Right ext
 
@@ -461,3 +481,6 @@ debug :: Config -> Text -> IO ()
 debug config msg
     | _debug config = Text.IO.hPutStrLn IO.stderr msg
     | otherwise = return ()
+
+showt :: Show a => a -> Text
+showt = Text.pack . show
