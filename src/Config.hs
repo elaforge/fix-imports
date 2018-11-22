@@ -112,7 +112,8 @@ parse text = (config, errors)
     where
     commas = Text.intercalate ", "
     errors = map (".fix-imports: "<>) $ concat
-        [ [ "unrecognized fields: " <> commas unknownFields
+        [ [ "duplicate fields: " <> commas duplicates | not (null duplicates) ]
+        , [ "unrecognized fields: " <> commas unknownFields
           | not (null unknownFields)
           ]
         , [ "unknown language extensions: " <> commas unknownLanguage
@@ -170,10 +171,11 @@ parse text = (config, errors)
         , "sort-unqualified-last"
         , "unqualified"
         ]
-    fields = Map.fromList
-        [ (section, words)
-        | (section, words) <- Index.parseSections text
-        ]
+    fields = Map.fromList sections
+    sections = Index.parseSections text
+    duplicates = map head $ filter ((>1) . length) $ List.group $ List.sort $
+        map fst sections
+
     getModules = map (Types.ModuleName . Text.unpack) . get
     get k = Map.findWithDefault [] k fields
     getStrings = map Text.unpack . get

@@ -1,7 +1,7 @@
 * done; - not done; / decided against
 
 bug:
-  - warn about duplicate config entries
+  * warn about duplicate config entries
   - unqualified imports cause imports due to symbols not in call position
   * It wants to manage unqualified imports it shouldn't
     . if I have 'unqualified: Control.Monad.when', it will delete a

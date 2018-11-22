@@ -28,8 +28,12 @@ import qualified Util
 main :: IO ()
 main = do
     (config, errors) <- readConfig ".fix-imports"
-    mapM_ (Text.IO.hPutStrLn IO.stderr) errors
-    mainConfig config
+    if null errors
+        then mainConfig config
+        else do
+            IO.putStr =<<  IO.getContents
+            mapM_ (Text.IO.hPutStrLn IO.stderr) errors
+            Exit.exitFailure
 
 readConfig :: FilePath -> IO (Config.Config, [Text.Text])
 readConfig = fmap (maybe (Config.empty, []) Config.parse)

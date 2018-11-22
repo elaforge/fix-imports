@@ -13,11 +13,15 @@ import qualified Types
 
 
 test_parse = do
-    let f = parseConfig
-    equal (f []) Config.empty
-    equal (Config._order $
+    let f = check . Config.parse . Text.unlines
+        check (config, errs)
+            | null errs = Right config
+            | otherwise = Left $ Text.unlines errs
+    equal (f []) $ Right Config.empty
+    leftLike (f ["include: a", "include: b"]) "duplicate fields"
+    equal (Config._order <$>
             f ["import-order-first: A", "import-order-last: B"]) $
-        Config.Order
+        Right $ Config.Order
             { _importOrder = Config.Priority ["A"] ["B"]
             , _sortUnqualifiedLast = False
             }
