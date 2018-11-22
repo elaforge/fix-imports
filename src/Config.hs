@@ -1,4 +1,5 @@
 -- | Per-project 'Config' and functions to interpret it.
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PartialTypeSignatures #-} -- sort keys only care about Ord
@@ -19,6 +20,8 @@ import qualified Language.Haskell.Exts as Haskell
 import qualified Language.Haskell.Exts.Extension as Extension
 import qualified System.FilePath as FilePath
 import qualified System.IO as IO
+import qualified Text.PrettyPrint as PP
+import Text.PrettyPrint ((<+>))
 
 import qualified Index
 import qualified Types
@@ -39,6 +42,7 @@ data Config = Config {
     , _unqualified :: Map.Map (Haskell.Name ()) Types.ModuleName
     -- import-as: Data.Text.Lazy as DTL -> Map DTL Data.Text.Lazy
     , _qualifyAs :: Map.Map Types.Qualification Types.Qualification
+    , _format :: Format
     , _debug :: Bool
     } deriving (Eq, Show)
 
@@ -68,6 +72,15 @@ instance Semigroup (Priority a) where
 instance Monoid (Priority a) where
     mempty = Priority mempty mempty
 
+data Format =
+    Standard -- ^ Use the standard haskell-src-exts style with defaultMode
+    | Custom !PPConfig
+    deriving (Eq, Show)
+
+data PPConfig = PPConfig {
+    _leaveSpaceForQualified :: Bool
+    } deriving (Eq, Show)
+
 -- | A simple pattern: @M.@ matches M and M.*.  Anything else matches exactly.
 type ModulePattern = String
 
@@ -88,6 +101,7 @@ empty = Config
     , _modulePriority = mempty
     , _unqualified = mempty
     , _qualifyAs = mempty
+    , _format = Standard
     , _debug = False
     }
 
@@ -110,6 +124,7 @@ parse text = (config, errors)
         , [ "qualify-as: " <> commas unknownQualifyAs
           | not (null unknownQualifyAs)
           ]
+        , maybe [] ((:[]) . ("format: "<>)) formatError
         ]
     config = empty
         { _includes = get "include"
@@ -132,6 +147,7 @@ parse text = (config, errors)
                 }
             }
         , _unqualified = Map.fromList $ map Tuple.swap unqualified
+        , _format = format
         , _qualifyAs = qualifyAs
         }
     (unknownUnqualified, unqualified) = Either.partitionEithers $
@@ -139,16 +155,20 @@ parse text = (config, errors)
     (unknownLanguage, language) = parseLanguage (get "language")
     (unknownQualifyAs, qualifyAs) =
         parseQualifyAs $ Text.unwords $ map Text.pack $ get "qualify-as"
+    (format, formatError) = case parseFormat (getWords "format") of
+        Right format -> (format, Nothing)
+        Left err -> (Standard, Just err)
     unknownFields = Map.keys fields List.\\ valid
     valid =
-        [ "include"
-        , "language"
+        [ "format"
         , "import-order-first", "import-order-last"
-        , "prio-package-high", "prio-package-low"
+        , "include"
+        , "language"
         , "prio-module-high", "prio-module-low"
+        , "prio-package-high", "prio-package-low"
+        , "qualify-as"
         , "sort-unqualified-last"
         , "unqualified"
-        , "qualify-as"
         ]
     fields = Map.fromList
         [ (section, map Text.unpack words)
@@ -156,7 +176,15 @@ parse text = (config, errors)
         ]
     getModules = map Types.ModuleName . get
     get k = Map.findWithDefault [] k fields
+    getWords = words . unwords . get
     getBool k = k `Map.member` fields
+
+parseFormat :: [String] -> Either Text Format
+parseFormat = \case
+    ["leave-space-for-qualified"] -> Right $ Custom $ PPConfig
+        { _leaveSpaceForQualified = True }
+    [] -> Right Standard
+    ws -> Left $ "unrecognized words: " <> Text.pack (show ws)
 
 -- |
 -- "A.B.c" -> (Haskell.Ident () "c", "A.B")
@@ -276,8 +304,8 @@ searchPrio high low mod = case List.findIndex (== mod) high of
 --
 -- An unqualified import will follow a qualified one.  The Prelude, if
 -- imported, always goes first.
-formatGroups :: Order -> [Types.ImportLine] -> String
-formatGroups order imports =
+formatGroups :: Format -> Order -> [Types.ImportLine] -> String
+formatGroups format order imports =
     unlines $ joinGroups
         [ showGroups (group (Util.sortOn packagePrio package))
         , showGroups (group (Util.sortOn localPrio local))
@@ -300,8 +328,6 @@ formatGroups order imports =
         ((_sortUnqualifiedLast order &&) . isUnqualified . Types.importDecl)
         ((==Types.Local) . Types.importSource)
         imports
-    -- (local, package) =
-    --     List.partition ((==Types.Local) . Types.importSource) imports
     group = collapse . Util.groupOn topModule
     topModule = takeWhile (/='.') . Types.moduleName . Types.importModule
     collapse [] = []
@@ -310,7 +336,7 @@ formatGroups order imports =
             [] -> [x]
             y : ys -> (x ++ y) : ys
         | otherwise = x : collapse xs
-    showGroups = List.intercalate [""] . map (map showImport)
+    showGroups = List.intercalate [""] . map (map (showImport format))
     joinGroups = List.intercalate [""] . filter (not . null)
     prelude = Types.ModuleName "Prelude"
 
@@ -337,18 +363,97 @@ localPriority prio import_ =
 qualifiedImport :: Types.ImportLine -> Bool
 qualifiedImport = Haskell.importQualified . Types.importDecl
 
-showImport :: Types.ImportLine -> String
-showImport (Types.ImportLine imp cmts _) =
-    above ++ importLine ++ (if null right then "" else ' ' : right)
+showImport :: Format -> Types.ImportLine -> String
+showImport format (Types.ImportLine decl cmts _) =
+    above ++ showImportDecl format decl
+        ++ (if null right then "" else ' ' : right)
     where
     above = concat [cmt ++ "\n" | Types.Comment Types.CmtAbove cmt <- cmts]
-    importLine = Haskell.prettyPrintStyleMode style mode imp
     right = Util.join "\n" [cmt | Types.Comment Types.CmtRight cmt <- cmts]
+
+showImportDecl :: Format -> Types.ImportDecl -> String
+showImportDecl format = case format of
+    Standard -> Haskell.prettyPrintStyleMode style Haskell.defaultMode
+    Custom config -> PP.renderStyle style . prettyImportDecl config
+    where
     style = Haskell.style
         { Haskell.lineLength = 80
         , Haskell.ribbonsPerLine = 1
         }
-    mode = Haskell.defaultMode
+
+prettyImportDecl :: PPConfig -> Haskell.ImportDecl a -> PP.Doc
+prettyImportDecl config
+        (Haskell.ImportDecl _ m qual src safe mbPkg mbName mbSpecs) = do
+    PP.hsep
+        [ "import"
+        , if qual || not (_leaveSpaceForQualified config) then mempty
+            else PP.text (replicate (length ("qualified" :: String)) ' ')
+        , if src then "{-# SOURCE #-}" else mempty
+        , if safe then "safe" else mempty
+        , if qual then "qualified" else mempty
+        , maybe mempty (\s -> PP.text (show s)) mbPkg
+        , nameOf m
+        , maybe mempty (\m -> "as" <+> nameOf m) mbName
+        , maybe mempty prettyImportSpecList mbSpecs
+        ]
+        where
+        nameOf (Haskell.ModuleName _ s) = PP.text s
+
+-- ** Language.Haskell.Exts.Pretty copy-paste
+
+-- Language.Haskell.Exts.Pretty doesn't export the pretty method.
+--
+-- Ironically the haskell-src-exts complains about having to copy paste
+-- PP.punctuate, which is no longer necessary, while forcing me to copy paste
+-- much more, by committing the same mistake.
+
+prettyImportSpecList :: Haskell.ImportSpecList a -> PP.Doc
+prettyImportSpecList (Haskell.ImportSpecList _ b ispecs) =
+    (if b then "hiding" else mempty) <+> parenList (map prettyISpec ispecs)
+
+prettyISpec :: Haskell.ImportSpec a -> PP.Doc
+prettyISpec = \case
+    Haskell.IVar _ name -> prettyName name
+    Haskell.IAbs _ ns name -> prettyNamespace ns <+> prettyName name
+    Haskell.IThingAll _ name -> prettyName name <> PP.text "(..)"
+    Haskell.IThingWith _ name nameList ->
+        prettyName name <> (parenList . map prettyCName $ nameList)
+
+prettyName :: Haskell.Name l -> PP.Doc
+prettyName name = case name of
+    Haskell.Symbol _ ('#':_) -> PP.char '(' <+> ppName name <+> PP.char ')'
+    _ -> parensIf (isSymbolName name) (ppName name)
+
+prettyCName :: Haskell.CName l -> PP.Doc
+prettyCName = \case
+    Haskell.VarName _ n -> prettyName n
+    Haskell.ConName _ n -> prettyName n
+
+prettyNamespace :: Haskell.Namespace l -> PP.Doc
+prettyNamespace = \case
+    Haskell.NoNamespace {} -> mempty
+    Haskell.TypeNamespace {} -> "type"
+    Haskell.PatternNamespace {} -> "pattern"
+
+parensIf :: Bool -> PP.Doc -> PP.Doc
+parensIf True = PP.parens
+parensIf False = id
+
+isSymbolName :: Haskell.Name l -> Bool
+isSymbolName (Haskell.Symbol {}) = True
+isSymbolName _ = False
+
+
+ppName :: Haskell.Name l -> PP.Doc
+ppName (Haskell.Ident _ s) = PP.text s
+ppName (Haskell.Symbol _ s) = PP.text s
+
+parenList :: [PP.Doc] -> PP.Doc
+parenList = PP.parens . PP.hsep . PP.punctuate PP.comma
+
+pretty :: Haskell.Pretty a => a -> PP.Doc
+pretty _ = "?"
+
 
 -- * log
 

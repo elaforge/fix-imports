@@ -187,7 +187,7 @@ fixImports fs config index modulePath mod cmts source = do
         mkError _ (Just imp) = Right imp
         mkError mod Nothing = Left mod
     let formattedImports =
-            Config.formatGroups (Config._order config)
+            Config.formatGroups (Config._format config) (Config._order config)
                 (importLines ++ newUnqualImports)
     return $ case notFound of
         _ : _ -> Left $ "not found: "

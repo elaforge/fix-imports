@@ -30,16 +30,19 @@ prio-package-high:
 -- don't want to import.
 prio-package-low: haskell98 ghc Cabal
 
+-- In the abscence of prio-* config, the module with the least number of dots
+-- is picked.  Usually packages put the most "public" modules at the top, e.g.
+-- IO should choose System.IO, not Data.Text.Lazy.IO
+
 -- Manage these symbols as unqualified imports.  Use ()s for operators.
 unqualified: Data.Bifunctor.first Data.Bifunctor.second System.FilePath.(</>)
 
 -- DTL.something will turn into a search for Data.Text.Lazy.
 qualify-as: Data.Text.Lazy as DTL
 
--- Otherwise, the module with the least number of dots is picked.  Usually
--- packages put the most "public" modules at the top, e.g. IO should choose
--- System.IO, not Data.Text.Lazy.IO
-
+-- Insert a space gap for the "qualified" keyword.  This for old fashioned
+-- people, who still actually look at their import blocks :)
+format: leave-space-for-qualified
 
 -- Space separate list of extensions that are enabled by default.
 language: GeneralizedNewtypeDeriving

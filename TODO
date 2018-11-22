@@ -13,9 +13,9 @@ feature:
       Maybe only for local imports?  Or local imports where there isn't an
       obvious winner, where obvious winner means in the same directory?
 
-  - unqualified syntax sugar: Data.Bifunctor.(first,second)
+  - unqualified syntax sugar: Data.Bifunctor (first, second)
   groq style:
-    - space for qualified
+    * space for qualified
     * import qualified as some other name, e.g.
       . import-as: Data.Text.Lazy as DTL, ...
     - disable automatic grouping, just [hackage, local]

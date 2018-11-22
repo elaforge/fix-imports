@@ -1,5 +1,7 @@
 ### 2.1.0 - unreleased
 
+- add format: leave-space-for-qualified
+
 - add import-as config option
 
     E.g. import Data.Text.Lazy as DTL, instead of always having to qualify
