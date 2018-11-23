@@ -2,7 +2,7 @@
 
 - unqualified syntax changed to support multiple imports per module
 
-- add format: leave-space-for-qualified
+- add `format: leave-space-for-qualified` and `format: no-group`
 
 - add import-as config option
 

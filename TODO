@@ -16,7 +16,7 @@ feature:
     * space for qualified
     * import qualified as some other name, e.g.
       . import-as: Data.Text.Lazy as DTL, ...
-    - disable automatic grouping, just [hackage, local]
+    * disable automatic grouping, just [hackage, local]
 
   - add *all* possible imports, but comment out all but the priority one
     . This seems not great because much of the time it guesses right.

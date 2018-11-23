@@ -77,7 +77,7 @@ test_pickModule = do
         Just (Just "p2", "Z.M")
 
 test_formatGroups = do
-    let f config imports = lines $ Config.formatGroups Config.Standard
+    let f config imports = lines $ Config.formatGroups Config.defaultFormat
             (Config._order (parseConfig config))
             (Testing.expectRight (parse (unlines imports)))
     equal (f [] []) []
@@ -126,8 +126,9 @@ test_formatGroups = do
 test_showImportLine = do
     let f = fmap (Config.showImportDecl style . Types.importDecl . head)
             . parse
-        style = Config.Custom $ Config.PPConfig
-            { _leaveSpaceForQualified = True
+        style = Config.defaultFormat
+            { Config._ppConfig = Just $ Config.PPConfig
+                { _leaveSpaceForQualified = True }
             }
     -- pprint $ fmap (Types.importDecl . head) . parse $ "import A.B as C (x)"
     equal (f "import A.B as C (x)") $ Right "import           A.B as C (x)"

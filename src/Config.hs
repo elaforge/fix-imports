@@ -5,7 +5,7 @@
 {-# LANGUAGE PartialTypeSignatures #-} -- sort keys only care about Ord
 {-# OPTIONS_GHC -Wno-partial-type-signatures #-}
 module Config where
-import Control.Monad (unless)
+import Control.Monad (foldM, unless)
 import Data.Bifunctor (second)
 import qualified Data.Char as Char
 import qualified Data.Either as Either
@@ -73,10 +73,13 @@ instance Semigroup (Priority a) where
 instance Monoid (Priority a) where
     mempty = Priority mempty mempty
 
-data Format =
-    Standard -- ^ Use the standard haskell-src-exts style with defaultMode
-    | Custom !PPConfig
-    deriving (Eq, Show)
+data Format = Format {
+    -- | How to format import lines.  Nothing to use the standard
+    -- haskell-src-exts style with defaultMode.
+    _ppConfig :: Maybe PPConfig
+    -- | If true, group imports by their first component.
+    , _groupImports :: Bool
+    } deriving (Eq, Show)
 
 data PPConfig = PPConfig {
     _leaveSpaceForQualified :: Bool
@@ -102,8 +105,14 @@ empty = Config
     , _modulePriority = mempty
     , _unqualified = mempty
     , _qualifyAs = mempty
-    , _format = Standard
+    , _format = defaultFormat
     , _debug = False
+    }
+
+defaultFormat :: Format
+defaultFormat = Format
+    { _ppConfig = Nothing
+    , _groupImports = True
     }
 
 -- | Parse .fix-imports file.
@@ -158,7 +167,7 @@ parse text = (config, errors)
         parseQualifyAs $ Text.unwords $ get "qualify-as"
     (format, formatError) = case parseFormat (get "format") of
         Right format -> (format, Nothing)
-        Left err -> (Standard, Just err)
+        Left err -> (defaultFormat, Just err)
     unknownFields = Map.keys fields List.\\ valid
     valid =
         [ "format"
@@ -182,11 +191,12 @@ parse text = (config, errors)
     getBool k = k `Map.member` fields
 
 parseFormat :: [Text] -> Either Text Format
-parseFormat = \case
-    ["leave-space-for-qualified"] -> Right $ Custom $ PPConfig
-        { _leaveSpaceForQualified = True }
-    [] -> Right Standard
-    ws -> Left $ "unrecognized words: " <> Text.pack (show ws)
+parseFormat = foldM set defaultFormat
+    where
+    set fmt "leave-space-for-qualified" = Right $ fmt
+        { _ppConfig = Just $ PPConfig { _leaveSpaceForQualified = True } }
+    set fmt "no-group" = Right $ fmt { _groupImports = False }
+    set _ w = Left $ "unrecognized word: " <> showt w
 
 -- |
 -- "A.B(c); Q(r)" -> [Right ("A.B", "c"), Right ("Q", "r")]
@@ -350,7 +360,9 @@ formatGroups format order imports =
         ((_sortUnqualifiedLast order &&) . isUnqualified . Types.importDecl)
         ((==Types.Local) . Types.importSource)
         imports
-    group = collapse . Util.groupOn topModule
+    group
+        | _groupImports format = collapse . Util.groupOn topModule
+        | otherwise = (:[])
     topModule = takeWhile (/='.') . Types.moduleName . Types.importModule
     collapse [] = []
     collapse (x:xs)
@@ -394,9 +406,9 @@ showImport format (Types.ImportLine decl cmts _) =
     right = Util.join "\n" [cmt | Types.Comment Types.CmtRight cmt <- cmts]
 
 showImportDecl :: Format -> Types.ImportDecl -> String
-showImportDecl format = case format of
-    Standard -> Haskell.prettyPrintStyleMode style Haskell.defaultMode
-    Custom config -> PP.renderStyle style . prettyImportDecl config
+showImportDecl format = case _ppConfig format of
+    Nothing -> Haskell.prettyPrintStyleMode style Haskell.defaultMode
+    Just config -> PP.renderStyle style . prettyImportDecl config
     where
     style = Haskell.style
         { Haskell.lineLength = 80
