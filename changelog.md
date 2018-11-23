@@ -1,4 +1,4 @@
-### 2.1.0 - unreleased
+### 2.1.0
 
 - unqualified syntax changed to support multiple imports per module
 
