@@ -30,10 +30,7 @@ main = do
     (config, errors) <- readConfig ".fix-imports"
     if null errors
         then mainConfig config
-        else do
-            IO.putStr =<<  IO.getContents
-            mapM_ (Text.IO.hPutStrLn IO.stderr) errors
-            Exit.exitFailure
+        else usage $ Text.unpack $ Text.unlines errors
 
 readConfig :: FilePath -> IO (Config.Config, [Text.Text])
 readConfig = fmap (maybe (Config.empty, []) Config.parse)
