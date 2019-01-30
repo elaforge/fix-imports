@@ -27,22 +27,24 @@ import qualified Util
 
 main :: IO ()
 main = do
+    -- I need the module path to search for modules relative to it first.  I
+    -- could figure it out from the parsed module name, but a main module may
+    -- not have a name.
+    (modulePath, flags) <- parseArgs =<< Environment.getArgs
     (config, errors) <- readConfig ".fix-imports"
     if null errors
-        then mainConfig config
-        else usage $ Text.unpack $ Text.unlines errors
+        then mainConfig config flags modulePath
+        else do
+            Text.IO.hPutStrLn IO.stderr $ Text.unlines errors
+            Exit.exitFailure
 
 readConfig :: FilePath -> IO (Config.Config, [Text.Text])
 readConfig = fmap (maybe (Config.empty, []) Config.parse)
     . Util.catchENOENT . Text.IO.readFile
 
-mainConfig :: Config.Config -> IO ()
-mainConfig config = do
-    -- I need the module path to search for modules relative to it first.  I
-    -- could figure it out from the parsed module name, but a main module may
-    -- not have a name.
-    (modulePath, (verbose, debug, includes)) <-
-        parseArgs =<< Environment.getArgs
+mainConfig :: Config.Config -> [Flag] -> FilePath -> IO ()
+mainConfig config flags modulePath = do
+    let (verbose, debug, includes) = extractFlags flags
     source <- IO.getContents
     config <- return $ config
         { Config._includes = includes ++ Config._includes config
@@ -63,7 +65,7 @@ mainConfig config = do
             mDone <- FixImports.metric metrics "done"
             Config.debug config $ Text.stripEnd $
                 FixImports.showMetrics (mDone : metrics)
-            when (verbose && (not (null addedMsg) || not (null removedMsg))) $
+            when (verbose && not (null addedMsg) || not (null removedMsg)) $
                 IO.hPutStrLn IO.stderr $ Util.join "; " $ filter (not . null)
                     [ if null addedMsg then "" else "added: " ++ addedMsg
                     , if null removedMsg then "" else "removed: " ++ removedMsg
@@ -83,23 +85,26 @@ options =
         "print added and removed modules on stderr"
     ]
 
+parseArgs :: [String] -> IO (String, [Flag])
+parseArgs args = case GetOpt.getOpt GetOpt.Permute options args of
+    (flags, [modulePath], []) -> return (modulePath, flags)
+    (_, [], errs) -> usage $ concat errs
+    _ -> usage "too many args"
+
+extractFlags :: [Flag] -> (Bool, Bool, [FilePath])
+extractFlags flags =
+    ( Verbose `elem` flags
+    , Debug `elem` flags
+    , "." : [p | Include p <- flags]
+    )
+    -- Includes always have the current directory first.
+
 usage :: String -> IO a
 usage msg = do
     name <- Environment.getProgName
-    putStr $ GetOpt.usageInfo (msg ++ "\n" ++ name ++ " Module.hs <Module.hs")
-        options
-    putStrLn $ "version: " ++ Version.showVersion Paths_fix_imports.version
+    IO.hPutStr IO.stderr $
+        GetOpt.usageInfo (msg ++ "\n" ++ name ++ " Module.hs <Module.hs")
+            options
+    IO.hPutStrLn IO.stderr $
+        "version: " ++ Version.showVersion Paths_fix_imports.version
     Exit.exitFailure
-
-parseArgs :: [String] -> IO (String, (Bool, Bool, [FilePath]))
-parseArgs args = case GetOpt.getOpt GetOpt.Permute options args of
-    (flags, [modulePath], []) -> return (modulePath, parse flags)
-    (_, [], errs) -> usage $ concat errs
-    _ -> usage "too many args"
-    where
-    parse flags =
-        ( Verbose `elem` flags
-        , Debug `elem` flags
-        , "." : [p | Include p <- flags]
-        )
-    -- Includes always have the current directory first.

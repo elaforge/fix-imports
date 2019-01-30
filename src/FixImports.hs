@@ -1,6 +1,6 @@
 {- | Automatically fix the import list in a haskell module.
 
-    This only really works for qualified names.  The process is as follows:
+    The process is as follows:
 
     - Parse the entire file and extract the Qualification of qualified names
     like @A.b@, which is simple @A@.
