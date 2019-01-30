@@ -8,6 +8,7 @@ bug:
       'import Control.Monad (unless)'
 
 feature:
+  - I'd like a add/removed symbol if it modified an unqualified import list
   * unqualified syntax sugar: Data.Bifunctor.(first, second)
     . Unfortunately this is ambiguous with operators: A.(+).
     . I could imitate import syntax: A (b); C ((+), d)

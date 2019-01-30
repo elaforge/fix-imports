@@ -32,10 +32,11 @@ import qualified System.Process as Process
 haskellOpChar :: Char -> Bool
 haskellOpChar c =
     IntSet.member (Char.ord c) opChars
-        || isSymbolCharacterCategory (Char.generalCategory c)
+    || (IntSet.notMember (Char.ord c) exceptions
+        && isSymbolCharacterCategory (Char.generalCategory c))
     where
-    opChars :: IntSet.IntSet
     opChars = IntSet.fromList $ map Char.ord "-!#$%&*+./<=>?@^|~:\\"
+    exceptions = IntSet.fromList $ map Char.ord "_\"'"
 
 isSymbolCharacterCategory :: Char.GeneralCategory -> Bool
 isSymbolCharacterCategory cat = Set.member cat symbolCategories
