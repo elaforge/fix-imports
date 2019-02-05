@@ -4,7 +4,7 @@ with no corresponding import, remove unused import lines, and keep the
 import block sorted, with optional rules for grouping.
 
 Support for unqualified imports is limited to symbols you explicitly configure,
-so if you list `System.FilePath.(</>)`, it will add that import when you use
+so if you list `System.FilePath ((</>))`, it will add that import when you use
 it, or remove when it's no longer used, but it won't go search modules for
 unqualified imports.
 
