@@ -47,6 +47,9 @@ format:
     -- Suppress the usual behaviour where imports are grouped by the first
     -- component.
     no-group
+    -- If there is a long explicit import list, it might have to be wrapped.
+    -- Wrap to this many columns.
+    columns=80
 
 -- Space separate list of extensions that are enabled by default.
 language: GeneralizedNewtypeDeriving

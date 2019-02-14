@@ -5,15 +5,15 @@
 {-# LANGUAGE PartialTypeSignatures #-} -- sort keys only care about Ord
 {-# OPTIONS_GHC -Wno-partial-type-signatures #-}
 module Config where
-import Control.Monad (foldM, unless)
-import Data.Bifunctor (second)
+import           Control.Monad (foldM, unless)
+import           Data.Bifunctor (second)
 import qualified Data.Char as Char
 import qualified Data.Either as Either
 import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
 import qualified Data.Text as Text
-import Data.Text (Text)
+import           Data.Text (Text)
 import qualified Data.Text.IO as Text.IO
 import qualified Data.Tuple as Tuple
 
@@ -22,7 +22,8 @@ import qualified Language.Haskell.Exts.Extension as Extension
 import qualified System.FilePath as FilePath
 import qualified System.IO as IO
 import qualified Text.PrettyPrint as PP
-import Text.PrettyPrint ((<+>))
+import           Text.PrettyPrint ((<+>))
+import qualified Text.Read as Read
 
 import qualified Index
 import qualified Types
@@ -79,6 +80,8 @@ data Format = Format {
     _ppConfig :: Maybe PPConfig
     -- | If true, group imports by their first component.
     , _groupImports :: Bool
+    -- | Number of columns to wrap to.
+    , _columns :: Int
     } deriving (Eq, Show)
 
 data PPConfig = PPConfig {
@@ -113,6 +116,7 @@ defaultFormat :: Format
 defaultFormat = Format
     { _ppConfig = Nothing
     , _groupImports = True
+    , _columns = 80
     }
 
 -- | Parse .fix-imports file.
@@ -196,6 +200,10 @@ parseFormat = foldM set defaultFormat
     set fmt "leave-space-for-qualified" = Right $ fmt
         { _ppConfig = Just $ PPConfig { _leaveSpaceForQualified = True } }
     set fmt "no-group" = Right $ fmt { _groupImports = False }
+    set fmt w | Just cols <- Text.stripPrefix "columns=" w =
+        case Read.readMaybe (Text.unpack cols) of
+            Nothing -> Left $ "non-numeric: " <> w
+            Just cols -> Right $ fmt { _columns = cols }
     set _ w = Left $ "unrecognized word: " <> showt w
 
 -- |
@@ -411,7 +419,7 @@ showImportDecl format = case _ppConfig format of
     Just config -> PP.renderStyle style . prettyImportDecl config
     where
     style = Haskell.style
-        { Haskell.lineLength = 80
+        { Haskell.lineLength = _columns format
         , Haskell.ribbonsPerLine = 1
         }
 

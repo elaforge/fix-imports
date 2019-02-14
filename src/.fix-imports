@@ -1,3 +1,7 @@
 unqualified: Data.Text (Text); Data.Bifunctor (bimap, first, second)
 prio-module-high: EL.Debug
 sort-unqualified-last: t
+
+format:
+    leave-space-for-qualified
+    columns=80
