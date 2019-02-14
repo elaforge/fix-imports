@@ -236,13 +236,13 @@ parseUnqualifiedImport pre post = do
     isModuleChar c = Char.isLetter c || Char.isDigit c || c == '.'
 
 -- |
--- "A.B as AB, C as E" -> [("AB", "A.B"), ("E", "C")]
+-- "A.B as AB; C as E" -> [("AB", "A.B"), ("E", "C")]
 parseQualifyAs :: Text
     -> ([Text], Map.Map Types.Qualification Types.Qualification)
 parseQualifyAs field
     | Text.null field = ([], mempty)
     | otherwise = second Map.fromList . Either.partitionEithers
-        . map (parse . Text.words) . Text.splitOn "," $ field
+        . map (parse . Text.words) . Text.splitOn ";" $ field
     where
     parse [module_, "as", alias] = Right
         ( Types.Qualification (Text.unpack alias)

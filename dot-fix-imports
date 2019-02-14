@@ -39,7 +39,7 @@ prio-package-low: haskell98 ghc Cabal
 unqualified: Data.Bifunctor (first, second); System.FilePath ((</>))
 
 -- DTL.something will turn into a search for Data.Text.Lazy.
-qualify-as: Data.Text.Lazy as DTL
+qualify-as: Data.Text.Lazy as DTL; Data.Vector.Unboxed as VU
 
 format:
     -- Insert a space gap for the "qualified" keyword.

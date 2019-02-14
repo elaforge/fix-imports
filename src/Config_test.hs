@@ -43,7 +43,7 @@ test_parseUnqualified = do
 
 test_parseQualifyAs = do
     let f = Config._qualifyAs . parseConfig
-    equal (f ["qualify-as: A.B as AB, E as F"]) $ Map.fromList
+    equal (f ["qualify-as: A.B as AB; E as F"]) $ Map.fromList
         [ ("AB", "A.B")
         , ("F", "E")
         ]
