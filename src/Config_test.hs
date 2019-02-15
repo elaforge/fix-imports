@@ -3,13 +3,14 @@
 module Config_test where
 import qualified Data.Map as Map
 import qualified Data.Text as Text
-import EL.Test.Global
 import qualified EL.Test.Testing as Testing
 import qualified Language.Haskell.Exts as Haskell
 
 import qualified Config
 import qualified FixImports
 import qualified Types
+
+import           EL.Test.Global
 
 
 test_parse = do
@@ -132,6 +133,31 @@ test_showImportLine = do
             }
     -- pprint $ fmap (Types.importDecl . head) . parse $ "import A.B as C (x)"
     equal (f "import A.B as C (x)") $ Right "import           A.B as C (x)"
+
+test_leaveSpaceForQualified = do
+    let f columns leaveSpace =
+            fmap (Config.showImportDecl (fmt columns leaveSpace) . head
+                . map Types.importDecl)
+            . parse
+        fmt columns leaveSpace = Config.defaultFormat
+            { Config._columns = columns
+            , Config._ppConfig = Just $
+                Config.PPConfig { Config._leaveSpaceForQualified = leaveSpace }
+            }
+    equal (f 80 False "import Foo.Bar (a, b, c)") $
+        Right "import Foo.Bar (a, b, c)"
+    equal (f 80 True "import Foo.Bar (a, b, c)") $
+        Right "import           Foo.Bar (a, b, c)"
+
+    equal (f 20 False "import Foo.Bar (a, b, c)") $
+        Right "import Foo.Bar\n       (a, b, c)"
+    equal (f 30 True "import Foo.Bar (a, b, c)") $
+        Right "import           Foo.Bar\n       (a, b, c)"
+
+    equal (f 30 True "import Foo.Bar (tweetle, beetle, paddle, battle)") $ Right
+        "import           Foo.Bar\n\
+        \       (tweetle, beetle,\n\
+        \        paddle, battle)"
 
 -- * util
 

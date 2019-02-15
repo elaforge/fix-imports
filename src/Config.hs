@@ -426,7 +426,7 @@ showImportDecl format = case _ppConfig format of
 prettyImportDecl :: PPConfig -> Haskell.ImportDecl a -> PP.Doc
 prettyImportDecl config
         (Haskell.ImportDecl _ m qual src safe mbPkg mbName mbSpecs) = do
-    PP.hsep
+    mySep
         [ "import"
         , if qual || not (_leaveSpaceForQualified config) then mempty
             else PP.text (replicate (length ("qualified" :: String)) ' ')
@@ -491,11 +491,15 @@ ppName (Haskell.Ident _ s) = PP.text s
 ppName (Haskell.Symbol _ s) = PP.text s
 
 parenList :: [PP.Doc] -> PP.Doc
-parenList = PP.parens . PP.hsep . PP.punctuate PP.comma
+parenList = PP.parens . PP.fsep . PP.punctuate PP.comma
 
 pretty :: Haskell.Pretty a => a -> PP.Doc
 pretty _ = "?"
 
+mySep :: [PP.Doc] -> PP.Doc
+mySep [] = error "mySep got empty"
+mySep [x] = x
+mySep (x:xs) = x <+> PP.fsep xs
 
 -- * log
 
