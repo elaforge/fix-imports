@@ -125,12 +125,8 @@ test_formatGroups = do
         ]
 
 test_showImportLine = do
-    let f = fmap (Config.showImportDecl style . Types.importDecl . head)
-            . parse
-        style = Config.defaultFormat
-            { Config._ppConfig = Just $ Config.PPConfig
-                { _leaveSpaceForQualified = True }
-            }
+    let f = fmap (Config.showImportDecl style . Types.importDecl . head) . parse
+        style = Config.defaultFormat { Config._leaveSpaceForQualified = True }
     -- pprint $ fmap (Types.importDecl . head) . parse $ "import A.B as C (x)"
     equal (f "import A.B as C (x)") $ Right "import           A.B as C (x)"
 
@@ -141,8 +137,7 @@ test_leaveSpaceForQualified = do
             . parse
         fmt columns leaveSpace = Config.defaultFormat
             { Config._columns = columns
-            , Config._ppConfig = Just $
-                Config.PPConfig { Config._leaveSpaceForQualified = leaveSpace }
+            , Config._leaveSpaceForQualified = leaveSpace
             }
     equal (f 80 False "import Foo.Bar (a, b, c)") $
         Right "import Foo.Bar (a, b, c)"

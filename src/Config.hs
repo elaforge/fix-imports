@@ -75,17 +75,12 @@ instance Monoid (Priority a) where
     mempty = Priority mempty mempty
 
 data Format = Format {
-    -- | How to format import lines.  Nothing to use the standard
-    -- haskell-src-exts style with defaultMode.
-    _ppConfig :: Maybe PPConfig
     -- | If true, group imports by their first component.
-    , _groupImports :: Bool
+    _groupImports :: Bool
+    -- | Insert space for unqualified imports to make the modules line up.
+    , _leaveSpaceForQualified :: Bool
     -- | Number of columns to wrap to.
     , _columns :: Int
-    } deriving (Eq, Show)
-
-data PPConfig = PPConfig {
-    _leaveSpaceForQualified :: Bool
     } deriving (Eq, Show)
 
 -- | A simple pattern: @M.@ matches M and M.*.  Anything else matches exactly.
@@ -114,8 +109,8 @@ empty = Config
 
 defaultFormat :: Format
 defaultFormat = Format
-    { _ppConfig = Nothing
-    , _groupImports = True
+    { _groupImports = True
+    , _leaveSpaceForQualified = False
     , _columns = 80
     }
 
@@ -197,8 +192,8 @@ parse text = (config, errors)
 parseFormat :: [Text] -> Either Text Format
 parseFormat = foldM set defaultFormat
     where
-    set fmt "leave-space-for-qualified" = Right $ fmt
-        { _ppConfig = Just $ PPConfig { _leaveSpaceForQualified = True } }
+    set fmt "leave-space-for-qualified" = Right $
+        fmt { _leaveSpaceForQualified = True }
     set fmt "no-group" = Right $ fmt { _groupImports = False }
     set fmt w | Just cols <- Text.stripPrefix "columns=" w =
         case Read.readMaybe (Text.unpack cols) of
@@ -414,21 +409,28 @@ showImport format (Types.ImportLine decl cmts _) =
     right = Util.join "\n" [cmt | Types.Comment Types.CmtRight cmt <- cmts]
 
 showImportDecl :: Format -> Types.ImportDecl -> String
-showImportDecl format = case _ppConfig format of
-    Nothing -> Haskell.prettyPrintStyleMode style Haskell.defaultMode
-    Just config -> PP.renderStyle style . prettyImportDecl config
+showImportDecl format = PP.renderStyle style . prettyImportDecl format
     where
     style = Haskell.style
         { Haskell.lineLength = _columns format
         , Haskell.ribbonsPerLine = 1
         }
 
-prettyImportDecl :: PPConfig -> Haskell.ImportDecl a -> PP.Doc
-prettyImportDecl config
+-- showImportDecl format = case _ppConfig format of
+--     Nothing -> Haskell.prettyPrintStyleMode style Haskell.defaultMode
+--     Just config -> PP.renderStyle style . prettyImportDecl config
+--     where
+--     style = Haskell.style
+--         { Haskell.lineLength = _columns format
+--         , Haskell.ribbonsPerLine = 1
+--         }
+
+prettyImportDecl :: Format -> Haskell.ImportDecl a -> PP.Doc
+prettyImportDecl format
         (Haskell.ImportDecl _ m qual src safe mbPkg mbName mbSpecs) = do
     mySep
         [ "import"
-        , if qual || not (_leaveSpaceForQualified config) then mempty
+        , if qual || not (_leaveSpaceForQualified format) then mempty
             else PP.text (replicate (length ("qualified" :: String)) ' ')
         , if src then "{-# SOURCE #-}" else mempty
         , if safe then "safe" else mempty
