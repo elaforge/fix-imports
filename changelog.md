@@ -1,3 +1,16 @@
+### 2.2.0
+
+- fix bugs where pretty printing didn't work right for
+leave-space-for-unqualified
+
+- add `format: columns=n` field
+
+- separate qualify-as fields with ; instead of ,
+
+- fix a bug where I didn't allow _ in unqualified import names
+
+- better error reporting
+
 ### 2.1.0
 
 - unqualified syntax changed to support multiple imports per module
