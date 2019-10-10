@@ -1,3 +1,5 @@
+- Add --config flag to explicitly set the config file.
+
 ### 2.2.0
 
 - fix bugs where pretty printing didn't work right for

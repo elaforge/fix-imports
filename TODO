@@ -8,6 +8,7 @@ bug:
       'import Control.Monad (unless)'
 
 feature:
+  - use tags see what module exports what, and disambiguate modules
   - I'd like a add/removed symbol if it modified an unqualified import list
   * unqualified syntax sugar: Data.Bifunctor.(first, second)
     . Unfortunately this is ambiguous with operators: A.(+).
@@ -19,7 +20,7 @@ feature:
       . import-as: Data.Text.Lazy as DTL, ...
     * disable automatic grouping, just [hackage, local]
 
-  - add *all* possible imports, but comment out all but the priority one
+  / add *all* possible imports, but comment out all but the priority one
     . This seems not great because much of the time it guesses right.
     . Then I need some notion of certainty.
     . Maybe only for local imports?  Or local imports where there isn't an

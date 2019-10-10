@@ -31,7 +31,9 @@ main = do
     -- could figure it out from the parsed module name, but a main module may
     -- not have a name.
     (modulePath, flags) <- parseArgs =<< Environment.getArgs
-    (config, errors) <- readConfig ".fix-imports"
+    let configFile = if null fns then ".fix-imports" else last fns
+            where fns = [fn | Config fn <- flags]
+    (config, errors) <- readConfig configFile
     if null errors
         then mainConfig config flags modulePath
         else do
@@ -72,12 +74,14 @@ mainConfig config flags modulePath = do
                     ]
             Exit.exitSuccess
 
-data Flag = Debug | Include String | Verbose
+data Flag = Config FilePath | Debug | Include String | Verbose
     deriving (Eq, Show)
 
 options :: [GetOpt.OptDescr Flag]
 options =
-    [ GetOpt.Option [] ["debug"] (GetOpt.NoArg Debug)
+    [ GetOpt.Option ['c'] ["config"] (GetOpt.ReqArg Config "path")
+        "path to config file, defaults to .fix-imports"
+    , GetOpt.Option [] ["debug"] (GetOpt.NoArg Debug)
         "print debugging info on stderr"
     , GetOpt.Option ['i'] [] (GetOpt.ReqArg Include "path")
         "add to module include path"
