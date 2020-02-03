@@ -52,12 +52,13 @@ mainConfig config flags modulePath = do
         { Config._includes = includes ++ Config._includes config
         , Config._debug = debug
         }
-    fixed <- FixImports.fixModule config modulePath source
-        `Exception.catch` (\(exc :: Exception.SomeException) ->
-            return $ Left $ "exception: " ++ show exc)
+    (fixed, logs) <- FixImports.fixModule config modulePath source
+        `Exception.catch` \(exc :: Exception.SomeException) ->
+            return (Left $ "exception: " ++ show exc, [])
     case fixed of
         Left err -> do
             IO.putStr source
+            when debug $ mapM_ (Text.IO.hPutStrLn IO.stderr) logs
             IO.hPutStrLn IO.stderr $ "error: " ++ err
             Exit.exitFailure
         Right (FixImports.Result source added removed metrics) -> do
@@ -65,6 +66,7 @@ mainConfig config flags modulePath = do
             let names = Util.join ", " . map Types.moduleName . Set.toList
                 (addedMsg, removedMsg) = (names added, names removed)
             mDone <- FixImports.metric metrics "done"
+            when debug $ mapM_ (Text.IO.hPutStrLn IO.stderr) logs
             Config.debug config $ Text.stripEnd $
                 FixImports.showMetrics (mDone : metrics)
             when (verbose && not (null addedMsg) || not (null removedMsg)) $

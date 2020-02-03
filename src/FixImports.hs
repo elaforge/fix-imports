@@ -42,7 +42,9 @@
 module FixImports where
 import Prelude hiding (mod)
 import Control.Applicative ((<$>))
+import qualified Control.Monad.State.Strict as State
 import qualified Control.DeepSeq as DeepSeq
+import Control.Monad.Trans (lift)
 import Data.Bifunctor (first)
 import qualified Data.Char as Char
 import qualified Data.Either as Either
@@ -88,19 +90,21 @@ type Metric = (Clock.UTCTime, Text)
 addMetrics :: [Metric] -> Result -> Result
 addMetrics ms result = result { resultMetrics = ms ++ resultMetrics result }
 
-fixModule :: Config.Config -> FilePath -> String -> IO (Either String Result)
+fixModule :: Config.Config -> FilePath -> String
+    -> IO (Either String Result, [Text])
 fixModule config modulePath source = do
     mStart <- metric () "start"
     processedSource <- cppModule modulePath source
     mCpp <- metric () "cpp"
     case parse (Config._language config) modulePath processedSource of
         Haskell.ParseFailed srcloc err ->
-            return $ Left $ Haskell.prettyPrint srcloc ++ ": " ++ err
+            return (Left $ Haskell.prettyPrint srcloc ++ ": " ++ err, [])
         Haskell.ParseOk (mod, cmts) -> do
             mParse <- metric (mod `seq` (), cmts) "parse"
             index <- Index.load
             mLoad <- metric () "load-index"
-            fmap (addMetrics [mStart, mCpp, mParse, mLoad]) <$>
+            fmap (fmap List.reverse) $ flip State.runStateT [] $
+                fmap (addMetrics [mStart, mCpp, mParse, mLoad]) <$>
                 fixImports ioFilesystem config index modulePath mod cmts source
 
 parse :: [Extension.Extension] -> FilePath -> String
@@ -162,26 +166,33 @@ ioFilesystem = Filesystem
     , _metric = metric
     }
 
+type LogT m a = State.StateT [Text] m a
+
+debug :: Monad m => Config.Config -> Text -> LogT m ()
+debug config msg = when (Config._debug config) $ State.modify' (msg:)
+    -- The check is unnecessary since I check debug before printing them, but
+    -- it'll save a thunk at least.
+
 -- | Take a parsed module along with its unparsed text.  Generate a new import
 -- block with proper spacing, formatting, and comments.  Then snip out the
 -- import block on the import file, and replace it.
 fixImports :: Monad m => Filesystem m -> Config.Config -> Index.Index
     -> FilePath -> Types.Module -> [Haskell.Comment] -> String
-    -> m (Either String Result)
+    -> LogT m (Either String Result)
 fixImports fs config index modulePath mod cmts source = do
     let (newImports, unusedImports, imports, range) = importInfo mod cmts
-    mProcess <- _metric fs
+    mProcess <- lift $ _metric fs
         (length newImports, length unusedImports, length imports, range)
         "process"
     mbNew <- mapM (findNewImport fs config modulePath index)
         (Set.toList newImports)
-    mNewImports <- _metric fs mbNew "find-new-imports"
+    mNewImports <- lift $ _metric fs mbNew "find-new-imports"
     (imports, newUnqualImports, unusedUnqual) <- return $
         fixUnqualified config mod imports
-    newUnqualImports <- mapM (locateImport fs) newUnqualImports
-    mUnqual <- _metric fs newUnqualImports "unqualified-imports"
+    newUnqualImports <- lift $ mapM (locateImport fs) newUnqualImports
+    mUnqual <- lift $ _metric fs newUnqualImports "unqualified-imports"
     mbExisting <- mapM (findImport fs index (Config._includes config)) imports
-    mExistingImports <- _metric fs mbExisting "find-existing-imports"
+    mExistingImports <- lift $ _metric fs mbExisting "find-existing-imports"
     let existing = map (Types.importDeclModule . fst) imports
     let (notFound, importLines) = Either.partitionEithers $
             zipWith mkError
@@ -344,7 +355,7 @@ substituteImports imports (start, end) source =
 -- | Make a new ImportLine from a ModuleName.
 findNewImport :: Monad m => Filesystem m -> Config.Config -> FilePath
     -> Index.Index -> Types.Qualification
-    -> m (Maybe Types.ImportLine)
+    -> LogT m (Maybe Types.ImportLine)
     -- ^ Nothing if the module wasn't found
 findNewImport fs config modulePath index qual =
     fmap make <$> findModule fs config index modulePath qual
@@ -383,7 +394,7 @@ noSpan = Haskell.noInfoSpan (Haskell.SrcSpan "" 0 0 0 0)
 -- or Types.Package module.  Nothing if it wasn't found at all.
 findModule :: Monad m => Filesystem m -> Config.Config -> Index.Index
     -> FilePath -- ^ Path to the module being fixed.
-    -> Types.Qualification -> m (Maybe (Types.ModuleName, Types.Source))
+    -> Types.Qualification -> LogT m (Maybe (Types.ModuleName, Types.Source))
 findModule fs config index modulePath qual = do
     local <- map fnameToModule <$> ((++)
         <$> findLocalModules fs (Config._includes config) qual
@@ -391,9 +402,9 @@ findModule fs config index modulePath qual = do
             qualifyAs)
     let package = map (first Just) $
             findPackageModules qual ++ maybe [] findPackageModules qualifyAs
-    -- Config.debug config $ "findModule " <> showt qual <> " from "
-    --     <> showt modulePath <> ": local " <> showt found
-    --     <> "\npackage: " <> showt package
+    debug config $ "findModule " <> showt qual <> " from "
+        <> showt modulePath <> ": local " <> showt local
+        <> "\npackage: " <> showt package
     let prio = Config._modulePriority config
     return $ case Config.pickModule prio modulePath (local++package) of
         Just (package, mod) -> Just
@@ -410,7 +421,7 @@ findModule fs config index modulePath qual = do
 -- | Given A.B, look for A/B.hs, */A/B.hs, */*/A/B.hs, etc. in each of the
 -- include paths.
 findLocalModules :: Monad m => Filesystem m -> [FilePath]
-    -> Types.Qualification -> m [FilePath]
+    -> Types.Qualification -> LogT m [FilePath]
 findLocalModules fs includes (Types.Qualification name) =
     fmap concat . forM includes $ \dir -> map (stripDir dir) <$>
         findFiles fs searchDepth (Types.moduleToPath (Types.ModuleName name))
@@ -425,9 +436,9 @@ findFiles :: Monad m => Filesystem m
     -> Int -- ^ Descend into subdirectories this many times.
     -> FilePath -- ^ Find files with this suffix.  Can contain slashes.
     -> FilePath -- ^ Start from this directory.  Return [] if it doesn't exist.
-    -> m [FilePath]
+    -> LogT m [FilePath]
 findFiles fs depth file dir = do
-    (subdirs, fns) <- _listDir fs dir
+    (subdirs, fns) <- lift $ _listDir fs dir
     subfns <- if depth > 0
         then concat <$> mapM (findFiles fs (depth-1) file)
             (filter isModuleDir subdirs)
@@ -443,7 +454,7 @@ findFiles fs depth file dir = do
 -- | Make an existing import into an ImportLine by finding out if it's a local
 -- module or a package module.
 findImport :: Monad m => Filesystem m -> Index.Index -> [FilePath] -> ImportLine
-    -> m (Maybe Types.ImportLine)
+    -> LogT m (Maybe Types.ImportLine)
 findImport fs index includes (imp, cmts) = do
     found <- findModuleName fs index includes (Types.importDeclModule imp)
     return $ case found of
@@ -457,9 +468,9 @@ findImport fs index includes (imp, cmts) = do
 -- | True if it was found in a local directory, False if it was found in the
 -- ghc package db, and Nothing if it wasn't found at all.
 findModuleName :: Monad m => Filesystem m -> Index.Index -> [FilePath]
-    -> Types.ModuleName -> m (Maybe Types.Source)
+    -> Types.ModuleName -> LogT m (Maybe Types.Source)
 findModuleName fs index includes mod = do
-    isLocal <- isLocalModule fs mod ("" : includes)
+    isLocal <- lift $ isLocalModule fs mod ("" : includes)
     return $
         if isLocal then Just Types.Local
         else if isPackageModule index mod then Just Types.Package

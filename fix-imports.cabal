@@ -52,6 +52,7 @@ executable fix-imports
         , directory
         , filepath
         , haskell-src-exts >= 1.16.0
+        , mtl
         , process
         , split
         , text
