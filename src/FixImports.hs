@@ -73,6 +73,9 @@ import qualified Util
 import Control.Monad
 
 
+searchDepth :: Int
+searchDepth = 12
+
 data Result = Result {
     resultText :: String
     , resultAdded :: Set.Set Types.ModuleName
@@ -410,7 +413,8 @@ findLocalModules :: Monad m => Filesystem m -> [FilePath]
     -> Types.Qualification -> m [FilePath]
 findLocalModules fs includes (Types.Qualification name) =
     fmap concat . forM includes $ \dir -> map (stripDir dir) <$>
-        findFiles fs 4 (Types.moduleToPath (Types.ModuleName name)) dir
+        findFiles fs searchDepth (Types.moduleToPath (Types.ModuleName name))
+            dir
 
 stripDir :: FilePath -> FilePath -> FilePath
 stripDir dir path
