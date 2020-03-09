@@ -57,12 +57,16 @@ mainConfig config flags modulePath = do
             return (Left $ "exception: " ++ show exc, [])
     case fixed of
         Left err -> do
-            IO.putStr source
+            if Edit `elem` flags then putStrLn "0,0" else putStr source
             when debug $ mapM_ (Text.IO.hPutStrLn IO.stderr) logs
             IO.hPutStrLn IO.stderr $ "error: " ++ err
             Exit.exitFailure
-        Right (FixImports.Result source added removed metrics) -> do
-            IO.putStr source
+        Right (FixImports.Result range imports added removed metrics) -> do
+            if Edit `elem` flags
+                then do
+                    putStrLn $ show (fst range) <> "," <> show (snd range)
+                    putStr imports
+                else putStr $ FixImports.substituteImports imports range source
             let names = Util.join ", " . map Types.moduleName . Set.toList
                 (addedMsg, removedMsg) = (names added, names removed)
             mDone <- FixImports.metric metrics "done"
@@ -76,13 +80,15 @@ mainConfig config flags modulePath = do
                     ]
             Exit.exitSuccess
 
-data Flag = Config FilePath | Debug | Include String | Verbose
+data Flag = Config FilePath | Debug | Edit | Include String | Verbose
     deriving (Eq, Show)
 
 options :: [GetOpt.OptDescr Flag]
 options =
     [ GetOpt.Option ['c'] ["config"] (GetOpt.ReqArg Config "path")
         "path to config file, defaults to .fix-imports"
+    , GetOpt.Option [] ["edit"] (GetOpt.NoArg Edit)
+        "print delete range and new import block, rather than the whole file"
     , GetOpt.Option [] ["debug"] (GetOpt.NoArg Debug)
         "print debugging info on stderr"
     , GetOpt.Option ['i'] [] (GetOpt.ReqArg Include "path")

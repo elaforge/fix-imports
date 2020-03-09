@@ -75,15 +75,20 @@ import qualified Util
 import Control.Monad
 
 
+-- | Look only this deep for local modules.
 searchDepth :: Int
 searchDepth = 12
 
 data Result = Result {
-    resultText :: String
+    resultRange :: (Row, Row)
+    , resultImports :: String
     , resultAdded :: Set.Set Types.ModuleName
     , resultRemoved :: Set.Set Types.ModuleName
     , resultMetrics :: [Metric]
     } deriving (Show)
+
+-- | Line number in the input file.
+type Row = Int
 
 type Metric = (Clock.UTCTime, Text)
 
@@ -207,7 +212,8 @@ fixImports fs config index modulePath mod cmts source = do
         _ : _ -> Left $ "not found: "
             ++ Util.join ", " (map Types.moduleName notFound)
         [] -> Right $ Result
-            { resultText = substituteImports formattedImports range source
+            { resultRange = range
+            , resultImports = formattedImports
             , resultAdded = Set.fromList $
                 map (Types.importDeclModule . Types.importDecl) $
                 Maybe.catMaybes mbNew ++ newUnqualImports
