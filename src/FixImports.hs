@@ -110,7 +110,7 @@ fixModule config modulePath source = do
             mLoad <- metric () "load-index"
             fmap (fmap List.reverse) $ flip State.runStateT [] $
                 fmap (addMetrics [mStart, mCpp, mParse, mLoad]) <$>
-                fixImports ioFilesystem config index modulePath mod cmts source
+                fixImports ioFilesystem config index modulePath mod cmts
 
 parse :: [Extension.Extension] -> FilePath -> String
     -> Haskell.ParseResult
@@ -182,9 +182,9 @@ debug config msg = when (Config._debug config) $ State.modify' (msg:)
 -- block with proper spacing, formatting, and comments.  Then snip out the
 -- import block on the import file, and replace it.
 fixImports :: Monad m => Filesystem m -> Config.Config -> Index.Index
-    -> FilePath -> Types.Module -> [Haskell.Comment] -> String
+    -> FilePath -> Types.Module -> [Haskell.Comment]
     -> LogT m (Either String Result)
-fixImports fs config index modulePath mod cmts source = do
+fixImports fs config index modulePath mod cmts = do
     let (newImports, unusedImports, imports, range) = importInfo mod cmts
     mProcess <- lift $ _metric fs
         (length newImports, length unusedImports, length imports, range)
