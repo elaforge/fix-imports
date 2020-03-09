@@ -22,7 +22,6 @@ function FixImports()
     let l:out = systemlist(l:cmd, bufnr('%'))
 
     let errs = readfile(l:err)
-    let errs = []
     call delete(l:err)
     if v:shell_error == 0
         call s:ReplaceImports(l:out)
