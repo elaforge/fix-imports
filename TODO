@@ -11,15 +11,6 @@ feature:
   - use tags see what module exports what, and disambiguate modules
     . https://github.com/JonnyRa/vim-himposter
   - I'd like a add/removed symbol if it modified an unqualified import list
-  * unqualified syntax sugar: Data.Bifunctor.(first, second)
-    . Unfortunately this is ambiguous with operators: A.(+).
-    . I could imitate import syntax: A (b); C ((+), d)
-      But I need to separate with something, like ;.
-  groq style:
-    * space for qualified
-    * import qualified as some other name, e.g.
-      . import-as: Data.Text.Lazy as DTL, ...
-    * disable automatic grouping, just [hackage, local]
 
   / add *all* possible imports, but comment out all but the priority one
     . This seems not great because much of the time it guesses right.
@@ -48,11 +39,6 @@ feature:
   - Use haskell-names to guess the module to import based on the function name:
     http://documentup.com/haskell-suite/haskell-names
     This could even potentially support unqualified imports.
-
-  / Didn't want to import Ui.Types when I already have Types imported
-  unqualified.
-    I think this is working as intended, because an unqualified import can also
-    be used qualified.
 
   - If the choice is still ambiguous I could ask interactively.
     . This requires deeper integration, but vim does have menu selection

@@ -1,5 +1,5 @@
 -- fix-imports looks for a .fix-imports file in the current directory for
--- per-project configuration.
+-- per-project configuration.  You can set the file explicitly with --config.
 --
 -- The syntax is like ghc-pkg or cabal: word, colon, and a list of words.
 -- A line with leading space is a continuation of the previous line.
@@ -15,8 +15,9 @@ include: dist/build/my-project/my-project-tmp
 import-order-first: Util.
 -- These go in the given order, but after all the other imports.
 import-order-last: Global
--- If present at all, unqualified import-all lines always go last.
--- They should be special, and this helps them stand out.
+-- If present at all (the 't' argument is irrelevant), unqualified import-all
+-- lines always go last.  The idea is that they should be special, and this
+-- helps them stand out.
 sort-unqualified-last: t
 
 -- When there are multiple candidates for a module, prefer or don't prefer
@@ -51,5 +52,5 @@ format:
     -- Wrap to this many columns.
     columns=80
 
--- Space separate list of extensions that are enabled by default.
+-- Space separated list of extensions that are enabled by default.
 language: GeneralizedNewtypeDeriving

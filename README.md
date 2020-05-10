@@ -13,3 +13,32 @@ unqualified imports, you just have to do it manually.
 
 Since it's a unix-style filter, it should be possible to integrate into any
 editor.  There's an example vimrc to bind to a key in vim.
+
+### Usage:
+
+Normally you would integrate it with your editor (see `vimrc` for a vim
+example), but for testing, here's an example invocation:
+
+    fix-imports -i src -i test src/A/B/C.hs <src/A/B/C.hs
+    [ fixed contents of A/B/C.hs, or an error ]
+
+The `-i` flag is like ghc's `-i` flag, it will add an aditional root to the
+module search path.  The example will find modules in both `test/*` and
+`src/*`, in addition to the global package db.
+
+About the global package db, `fix-imports` uses the `ghc-pkg` command to find
+packages, so it will see whatever you see if you do `ghc-pkg list`.  If it
+doesn't see the right things for your package, say for the new nix-style
+builds, you'll have to figure out how to fix that.  As is usual for cabal and
+ghc integration, ghc has several overlapping but documented configuration
+methods, and cabal is completely undocumented.  The relevant bits for ghc are
+GHC_PACKAGE_PATH and perhaps package environments:
+https://downloads.haskell.org/~ghc/latest/docs/html/users_guide/packages.html#the-ghc-package-path-environment-variable
+Cabal doesn't seem to document how to get the appropriate package path for a
+nix-style build.  I don't use cabal so I haven't figured this out yet, but
+LEt me know if you know or figure it out.
+
+I don't use stack either, but my understanding is this is enough to get
+`ghc-pkg` working:
+
+    export GHC_PACKAGE_PATH=$(stack path --ghc-package-path)
