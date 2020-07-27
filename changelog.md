@@ -1,3 +1,9 @@
+### 2.3.0
+
+- add --edit flag, so I can just replace imports, instead of the whole file
+
+- add logging, and show findModule info when passed --debug
+
 - Add --config flag to explicitly set the config file.
 
 ### 2.2.0

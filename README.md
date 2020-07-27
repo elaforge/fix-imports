@@ -36,7 +36,7 @@ GHC_PACKAGE_PATH and perhaps package environments:
 https://downloads.haskell.org/~ghc/latest/docs/html/users_guide/packages.html#the-ghc-package-path-environment-variable
 Cabal doesn't seem to document how to get the appropriate package path for a
 nix-style build.  I don't use cabal so I haven't figured this out yet, but
-LEt me know if you know or figure it out.
+let me know if you know or figure it out.
 
 I don't use stack either, but my understanding is this is enough to get
 `ghc-pkg` working:
