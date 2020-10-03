@@ -1,7 +1,9 @@
 {-# LANGUAGE OverloadedStrings #-}
 -- | Maintain the index from Qualification to the full module from the package
 -- db that this Qualification probably intends.
-module Index (Index, Package, empty, load, makeIndex, parseSections) where
+module FixImports.Index (
+    Index, Package, empty, load, makeIndex, parseSections
+) where
 import Prelude hiding (mod)
 import Control.Monad
 import qualified Data.Either as Either
@@ -13,8 +15,8 @@ import Data.Text (Text)
 
 import qualified System.IO as IO
 
-import qualified Types
-import qualified Util
+import qualified FixImports.Types as Types
+import qualified FixImports.Util as Util
 
 
 -- | Map from tails of the each module in the package db to its module name.

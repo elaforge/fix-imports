@@ -5,7 +5,7 @@
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-module Main where
+module FixImports.Main where
 import qualified Control.Exception as Exception
 import Control.Monad (when)
 import qualified Data.Set as Set
@@ -18,11 +18,11 @@ import qualified System.Environment as Environment
 import qualified System.Exit as Exit
 import qualified System.IO as IO
 
-import qualified Config
-import qualified FixImports
+import qualified FixImports.Config as Config
+import qualified FixImports.FixImports as FixImports
 import qualified Paths_fix_imports
-import qualified Types
-import qualified Util
+import qualified FixImports.Types as Types
+import qualified FixImports.Util as Util
 
 
 main :: IO ()

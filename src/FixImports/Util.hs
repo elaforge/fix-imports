@@ -1,4 +1,4 @@
-module Util where
+module FixImports.Util where
 import Prelude hiding (head)
 import qualified Control.Concurrent as Concurrent
 import qualified Control.Concurrent.MVar as MVar

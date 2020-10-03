@@ -4,7 +4,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PartialTypeSignatures #-} -- sort keys only care about Ord
 {-# OPTIONS_GHC -Wno-partial-type-signatures #-}
-module Config where
+module FixImports.Config where
 import           Control.Monad (foldM, unless)
 import           Data.Bifunctor (second)
 import qualified Data.Char as Char
@@ -25,9 +25,9 @@ import qualified Text.PrettyPrint as PP
 import           Text.PrettyPrint ((<+>))
 import qualified Text.Read as Read
 
-import qualified Index
-import qualified Types
-import qualified Util
+import qualified FixImports.Index as Index
+import qualified FixImports.Types as Types
+import qualified FixImports.Util as Util
 
 
 data Config = Config {

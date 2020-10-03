@@ -1,6 +1,6 @@
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE OverloadedStrings #-}
-module FixImports_test where
+module FixImports.FixImports_test where
 import Control.Monad (unless, void)
 import qualified Control.Monad.Identity as Identity
 import qualified Control.Monad.State.Strict as State
@@ -15,10 +15,10 @@ import qualified Data.Time.Clock.POSIX as Clock.POSIX
 import qualified Language.Haskell.Exts as Haskell
 import qualified System.FilePath as FilePath
 
-import qualified Config
-import qualified FixImports
-import qualified Index
-import qualified Types
+import qualified FixImports.Config as Config
+import qualified FixImports.FixImports as FixImports
+import qualified FixImports.Index as Index
+import qualified FixImports.Types as Types
 
 import EL.Test.Global
 

@@ -1,14 +1,14 @@
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE OverloadedStrings #-}
-module Config_test where
+module FixImports.Config_test where
 import qualified Data.Map as Map
 import qualified Data.Text as Text
 import qualified EL.Test.Testing as Testing
 import qualified Language.Haskell.Exts as Haskell
 
-import qualified Config
-import qualified FixImports
-import qualified Types
+import qualified FixImports.Config as Config
+import qualified FixImports.FixImports as FixImports
+import qualified FixImports.Types as Types
 
 import           EL.Test.Global
 

@@ -1,5 +1,5 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-module Types where
+module FixImports.Types where
 import qualified Control.DeepSeq as DeepSeq
 import Control.DeepSeq (deepseq)
 import qualified Data.String as String

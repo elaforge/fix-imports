@@ -39,7 +39,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TupleSections #-}
-module FixImports where
+module FixImports.FixImports where
 import Prelude hiding (mod)
 import Control.Applicative ((<$>))
 import qualified Control.Monad.State.Strict as State
@@ -67,10 +67,10 @@ import qualified System.Directory as Directory
 import qualified System.FilePath as FilePath
 import System.FilePath ((</>))
 
-import qualified Config
-import qualified Index
-import qualified Types
-import qualified Util
+import qualified FixImports.Config as Config
+import qualified FixImports.Index as Index
+import qualified FixImports.Types as Types
+import qualified FixImports.Util as Util
 
 import Control.Monad
 
@@ -121,7 +121,8 @@ parse extensions modulePath =
         , Haskell.extensions = extensions ++ defaultExtensions
         -- The meaning of Nothing is undocumented, but I think it means
         -- to not check for fixity ambiguity at all, which is what I want.
-        , Haskell.fixities = Nothing
+        -- , Haskell.fixities = Nothing
+        , Haskell.ignoreFunctionArity = False
         }
     where
     defaultExtensions = map Extension.EnableExtension $

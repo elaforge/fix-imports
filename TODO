@@ -1,6 +1,9 @@
 * done; - not done; / decided against
 
 bug:
+  - it looks like haskell-src-exts SCC pragma parsing is totally buggy
+    . It doesn't support toplevel or nonquote SCCs.
+    . Let's just use ghc-lib-parser.
   * warn about duplicate config entries
   - unqualified imports cause imports due to symbols not in call position
   * It wants to manage unqualified imports it shouldn't
