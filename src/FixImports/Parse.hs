@@ -35,7 +35,9 @@ import           Data.Maybe (fromMaybe)
 import qualified Data.Set as Set
 
 import qualified Language.Haskell.GhclibParserEx.GHC.Parser as Parser
-import qualified Language.Haskell.GhclibParserEx.GHC.Settings.Config as Config
+-- This is the new one, but I use the old versions of ghc-lib-parser-ex.
+-- import qualified Language.Haskell.GhclibParserEx.GHC.Settings.Config as Config
+import qualified Language.Haskell.GhclibParserEx.Config as Config
 import qualified Language.Haskell.GhclibParserEx.GHC.Driver.Session as Session
 
 import qualified ApiAnnotation

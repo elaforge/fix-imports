@@ -97,6 +97,6 @@ feature:
     . But I thought this was tied to the trees that grow changes?
     . ghc-syntax-highlighter - uses lexer?
 
-  - Optionally write a cache of the package db.
-    . No need, most time is spent in haskell-src-exts parsing.
-    . Actually not really, but overall time is low.
+  / Optionally write a cache of the package db.
+    . No need, most time is spent parsing.
+    . It's fast enough.

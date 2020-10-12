@@ -153,7 +153,7 @@ checkForCpp :: (Row, Row) -> String -> [String]
 checkForCpp (start, end) =
     map (\(i, line) -> show i <> ":" <> line)
     . filter (any (`Set.member` cppThings) . words . snd)
-    . take (end-start) . drop start . zip [1..] . lines
+    . take (end-start) . drop start . zip [1 :: Int ..] . lines
     where
     cppThings = Set.fromList $ map ("#"<>)
         [ "define", "undef", "include", "if", "ifdef", "ifndef", "else"

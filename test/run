@@ -1,9 +1,15 @@
-#!/bin/zsh
+#!/usr/bin/env zsh
 
 setopt extended_glob
 
 cd $(dirname $0)
-bin=../../dist/build/fix-imports/fix-imports
+
+# New cabal apparently can't be run in a subdir, but gives a confusing error.
+root=$(cd .. && pwd)
+
+# bin=../../dist/build/fix-imports/fix-imports
+# bin=(cabal run --builddir=$root fix-imports --)
+bin=../../dist-newstyle/build/x86_64-osx/ghc-8.8.3/fix-imports-2.3.0/x/fix-imports/build/fix-imports/fix-imports
 
 tests=($@)
 if [[ -z $tests ]]; then
@@ -18,6 +24,7 @@ function test() {
     if [[ -r flags ]]; then
         flags=$(cat flags)
     fi
+    echo $bin ${=flags}
     $bin ${=flags} Main.hs <Main.hs >& $tmp
     diff $tmp expected
     local failed=$?

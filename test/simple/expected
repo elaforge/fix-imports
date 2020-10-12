@@ -1,3 +1,4 @@
+added: A.Used; removed: B.Unused
 import qualified A.Used as Used
 
 f :: Used.A -> Used.B

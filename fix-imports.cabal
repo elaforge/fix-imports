@@ -58,7 +58,7 @@ executable fix-imports
         , directory
         , filepath
         , ghc-lib-parser
-        , ghc-lib-parser-ex
+        , ghc-lib-parser-ex >= 8.10.0.6
         , mtl
         , pretty
         , process
