@@ -105,10 +105,17 @@ fixModule config modulePath source = do
             mParse <- metric (mod `seq` (), cmts) "parse"
             index <- Index.load
             mLoad <- metric () "load-index"
-            fmap (fmap List.reverse) $ flip State.runStateT [] $
-                fmap (addMetrics [mStart, mCpp, mParse, mLoad]) <$>
-                fixImports ioFilesystem config index modulePath
-                    (extract config mod cmts)
+            let extracted = extract config mod cmts
+            mExtract <- metric extracted "extract"
+            case checkForCpp (_importRange extracted) source of
+                [] -> fmap (fmap List.reverse) $ flip State.runStateT [] $
+                    fmap (addMetrics [mStart, mCpp, mParse, mLoad, mExtract]) <$>
+                    fixImports ioFilesystem config index modulePath extracted
+                cpps -> return
+                    ( Left $ "can't handle CPP directives in import block:\n"
+                        <> unlines cpps
+                    , []
+                    )
 
 parse :: [Types.Extension] -> FilePath -> String
     -> IO (Either String (Parse.Module, [Parse.Comment]))
@@ -135,6 +142,23 @@ cppModule filename = Cpphs.runCpphs options filename
         , Cpphs.literate = False -- untested with literate code
         , Cpphs.warnings = False
         }
+
+-- | I have to get the CPP out before parsing and fixing imports, but then it's
+-- hard to put it back in again.  Especially the main reason for CPP is
+-- conditional imports, which means I might not even know what to do with them.
+-- I suppose I could try to detect them and preserve them, but for now it's
+-- simpler to just abort on any CPP.  At least it's better than silently
+-- deleting it.
+checkForCpp :: (Row, Row) -> String -> [String]
+checkForCpp (start, end) =
+    map (\(i, line) -> show i <> ":" <> line)
+    . filter (any (`Set.member` cppThings) . words . snd)
+    . take (end-start) . drop start . zip [1..] . lines
+    where
+    cppThings = Set.fromList $ map ("#"<>)
+        [ "define", "undef", "include", "if", "ifdef", "ifndef", "else"
+        , "elif", "endif", "line", "error", "pragma"
+        ]
 
 -- | Capture all the IO operations needed by fixImports, so I can test without
 -- IO.  I could have used Free, but the operations are few, so it seemed
@@ -171,7 +195,6 @@ debug config msg = when (Config._debug config) $ State.modify' (msg:)
 fixImports :: Monad m => Filesystem m -> Config.Config -> Index.Index
     -> FilePath -> Extracted -> LogT m (Either String Result)
 fixImports fs config index modulePath extracted = do
-    mProcess <- lift $ _metric fs extracted "process"
     mbNew <- mapM (findNewImport fs config modulePath index)
         (Set.toList (_missingImports extracted))
     mNewImports <- lift $ _metric fs mbNew "find-new-imports"
@@ -204,8 +227,7 @@ fixImports fs config index modulePath extracted = do
                 Maybe.catMaybes mbNew ++ newUnqualImports
             , resultRemoved =
                 _unusedImports extracted <> Set.fromList unusedUnqual
-            , resultMetrics =
-                [mProcess, mNewImports, mExistingImports, mUnqual]
+            , resultMetrics = [mNewImports, mExistingImports, mUnqual]
             }
     where
     qualToMod (Types.Qualification name) = Types.ModuleName name
