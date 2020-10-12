@@ -39,7 +39,7 @@ use ghc-lib-parser:
     . But I hacked up my own pretty-printing for to qualified spaces.
 
 cleanup:
-  - put FixImports.Extracted into NFData and use that for metrics
+  * put FixImports.Extracted into NFData and use that for metrics
 
 bug:
   - don't walk into symlinks

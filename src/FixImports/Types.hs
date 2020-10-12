@@ -137,7 +137,7 @@ instance DeepSeq.NFData Entity where
 -- | A Qualification is a qualified name minus the actual name.  So it should
 -- be the tail of a ModuleName.
 newtype Qualification = Qualification String
-    deriving (Eq, Ord, Show, String.IsString)
+    deriving (Eq, Ord, Show, DeepSeq.NFData, String.IsString)
 
 -- | An unqualified identifier.
 data Name = Name !String | Operator !String

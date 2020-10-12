@@ -168,13 +168,7 @@ debug config msg = when (Config._debug config) $ State.modify' (msg:)
 fixImports :: Monad m => Filesystem m -> Config.Config -> Index.Index
     -> FilePath -> Extracted -> LogT m (Either String Result)
 fixImports fs config index modulePath extracted = do
-    mProcess <- lift $ _metric fs
-        ( length (_missingImports extracted)
-        , length (_unusedImports extracted)
-        , length (_unchangedImports extracted)
-        , _importRange extracted
-        )
-        "process"
+    mProcess <- lift $ _metric fs extracted "process"
     mbNew <- mapM (findNewImport fs config modulePath index)
         (Set.toList (_missingImports extracted))
     mNewImports <- lift $ _metric fs mbNew "find-new-imports"
@@ -422,6 +416,9 @@ data Extracted = Extracted {
     , _importRange :: (Int, Int)
     , _modToUnqualifieds :: Map.Map Types.ModuleName (Set.Set Types.Name)
     }
+
+instance DeepSeq.NFData Extracted where
+    rnf (Extracted a b c d e) = DeepSeq.rnf (a, b, c, d, e)
 
 extract :: Config.Config -> Parse.Module -> [Parse.Comment] -> Extracted
 extract config mod cmts = Extracted
