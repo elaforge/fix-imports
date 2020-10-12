@@ -19,6 +19,7 @@ test_importRange = do
     let f = fmap Parse.importRange . parse
     rightEqual (f "") (0, 0)
     rightEqual (f "module M where\n") (1, 1)
+    rightEqual (f "-- hi\nmodule M where\n") (2, 2)
     rightEqual (f
         "module M (\n\
         \    x, y\n\

@@ -52,10 +52,10 @@ mainConfig config flags modulePath = do
         { Config._includes = includes ++ Config._includes config
         , Config._debug = debug
         }
-    (fixed, logs) <- FixImports.fixModule config modulePath source
+    (result, logs) <- FixImports.fixModule config modulePath source
         `Exception.catch` \(exc :: Exception.SomeException) ->
             return (Left $ "exception: " ++ show exc, [])
-    case fixed of
+    case result of
         Left err -> do
             if Edit `elem` flags then putStrLn "0,0" else putStr source
             when debug $ mapM_ (Text.IO.hPutStrLn IO.stderr) logs

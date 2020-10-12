@@ -53,15 +53,29 @@ test_simple = do
 test_comments = do
     let run = fmap FixImports.resultImports
             . fixModule index [] (mkConfig "") "A.hs"
-        index = Index.makeIndex [("pkg", ["A"])]
+        index = Index.makeIndex [("pkg", ["A", "B"])]
     rightEqual (run "import A") "import A\n"
-    rightEqual (run "module M where\n-- above\nimport A -- right\n-- below")
-        "-- above\n\
-        \import A -- right\n"
-    rightEqual (run "-- above1\n-- above2\nimport A {- right -}\n")
-        "-- above1\n\
+    -- Comments out of the edited range are not affected.
+    rightEqual
+        (run
+            "-- before\n\
+            \module M where -- where\
+            \-- above\n\
+            \import A\n\
+            \-- below")
+        "import A\n"
+    rightEqual
+        (run
+            "module M where\n\
+            \import A\n\
+            \-- above1\n\
+            \-- above2\n\
+            \import B {- right -}\n")
+
+        "import A\n\
+        \-- above1\n\
         \-- above2\n\
-        \import A {- right -}\n"
+        \import B {- right -}\n"
 
 test_qualifyAs = do
     let run config files = fmap eResult . fixModule index files config "A.hs"

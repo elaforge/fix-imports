@@ -43,8 +43,8 @@ module FixImports.FixImports where
 import Prelude hiding (mod)
 import qualified Control.Monad.State.Strict as State
 import qualified Control.DeepSeq as DeepSeq
-import Control.Monad.Trans (lift)
-import Data.Bifunctor (first)
+import           Control.Monad.Trans (lift)
+import           Data.Bifunctor (first)
 import qualified Data.Char as Char
 import qualified Data.Either as Either
 import qualified Data.List as List
@@ -52,16 +52,15 @@ import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
 import qualified Data.Set as Set
 import qualified Data.Text as Text
-import Data.Text (Text)
+import           Data.Text (Text)
 import qualified Data.Time.Clock as Clock
 import qualified Data.Tuple as Tuple
-
-import qualified Language.Preprocessor.Cpphs as Cpphs
-
 import qualified Numeric
 import qualified System.Directory as Directory
 import qualified System.FilePath as FilePath
-import System.FilePath ((</>))
+import           System.FilePath ((</>))
+
+import qualified Language.Preprocessor.Cpphs as Cpphs
 
 import qualified FixImports.Config as Config
 import qualified FixImports.Format as Format
@@ -429,7 +428,7 @@ extract config mod cmts = Extracted
     { _missingImports = missing
     , _unusedImports = unused
     , _unchangedImports = importCmts
-    , _importRange = Parse.importRange mod
+    , _importRange = range
     , _modToUnqualifieds = makeModToUnqualifieds config mod
     }
     where
@@ -441,9 +440,12 @@ extract config mod cmts = Extracted
     imported = Set.fromList $ prelude : qualifiedImports
     importCmts =
         [ impCmt
-        | impCmt <- associateComments imports cmts
+        | impCmt <- associateComments imports $
+            dropWhile before $ List.sort cmts
         , keepImport (fst impCmt)
         ]
+    before = (< fst range) . Types._startLine . Parse._span
+    range = Parse.importRange mod
     -- Keep unqualified imports, but only keep qualified ones if they are used.
     -- Prelude is considered always used if it appears, because removing it
     -- changes import behavour.
@@ -467,8 +469,7 @@ extract config mod cmts = Extracted
 -- to the right of an import (e.g. commenting a complicated import list) will
 -- probably be messed up.  TODO Fix it if it becomes a problem.
 associateComments :: [Types.Import] -> [Parse.Comment] -> [ImportComment]
-associateComments imports cmts =
-    snd $ List.mapAccumL associate (List.sort cmts) imports
+associateComments imports cmts = snd $ List.mapAccumL associate cmts imports
     where
     associate cmts imp = (after, (imp, associated))
         where

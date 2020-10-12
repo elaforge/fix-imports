@@ -205,9 +205,10 @@ extractImport locDecl = Types.Import
 
 extractSrcSpan :: SrcLoc.SrcSpan -> Types.SrcSpan
 extractSrcSpan (SrcLoc.RealSrcSpan span) = Types.SrcSpan
-    { _startLine = SrcLoc.srcSpanStartLine span
+    -- GHC SrcSpan has 1-based lines, I use 0-based ones.
+    { _startLine = SrcLoc.srcSpanStartLine span - 1
     , _startCol = SrcLoc.srcSpanStartCol span
-    , _endLine = SrcLoc.srcSpanEndLine span
+    , _endLine = SrcLoc.srcSpanEndLine span - 1
     , _endCol = SrcLoc.srcSpanEndCol span
     }
 extractSrcSpan (SrcLoc.UnhelpfulSpan fstr) =
