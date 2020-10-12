@@ -3,8 +3,6 @@
 module FixImports.Config_test where
 import qualified Data.Map as Map
 import qualified Data.Text as Text
-import qualified EL.Test.Testing as Testing
-import qualified Language.Haskell.Exts as Haskell
 
 import qualified FixImports.Config as Config
 import qualified FixImports.FixImports as FixImports
@@ -30,16 +28,16 @@ test_parse = do
 test_parseUnqualified = do
     let f = Config._unqualified . parseConfig
     equal (f ["unqualified: A.B (c); D.E ((+))"]) $ Map.fromList
-        [ (Haskell.Ident () "c", "A.B")
-        , (Haskell.Symbol () "+", "D.E")
+        [ (Types.Name "c", "A.B")
+        , (Types.Operator "+", "D.E")
         ]
     equal (f ["unqualified: A.B(c, d)"]) $ Map.fromList
-        [ (Haskell.Ident () "c", "A.B")
-        , (Haskell.Ident () "d", "A.B")
+        [ (Types.Name "c", "A.B")
+        , (Types.Name "d", "A.B")
         ]
     equal (f ["unqualified: A.B (c,(+))"]) $ Map.fromList
-        [ (Haskell.Ident () "c", "A.B")
-        , (Haskell.Symbol () "+", "A.B")
+        [ (Types.Name "c", "A.B")
+        , (Types.Operator "+", "A.B")
         ]
 
 test_parseQualifyAs = do
@@ -77,98 +75,6 @@ test_pickModule = do
     equal (f [] "X.hs" [(Just "p1", "A.B.M"), (Just "p2", "Z.M")]) $
         Just (Just "p2", "Z.M")
 
-test_formatGroups = do
-    let f config imports = lines $ Config.formatGroups Config.defaultFormat
-            (Config._order (parseConfig config))
-            (Testing.expectRight (parse (unlines imports)))
-    equal (f [] []) []
-    -- Unqualified import-all goes last.
-    equal (f ["sort-unqualified-last: t"]
-            [ "import Z", "import A"
-            , "import qualified C", "import qualified B"
-            , "import C (a)"
-            ])
-        [ "import qualified B"
-        , "import qualified C"
-        , "import C (a)"
-        , ""
-        , "import A"
-        , "import Z"
-        ]
-
-    equal (f [] ["import qualified Z", "import qualified A"])
-        [ "import qualified A"
-        , "import qualified Z"
-        ]
-    equal (f ["import-order-first: Z"]
-            ["import qualified Z", "import qualified A"])
-        [ "import qualified Z"
-        , "import qualified A"
-        ]
-    equal (f ["import-order-last: A"]
-            ["import qualified Z", "import qualified A"])
-        [ "import qualified Z"
-        , "import qualified A"
-        ]
-
-    -- Exact match.
-    equal (f ["import-order-first: Z"]
-            ["import qualified Z.A", "import qualified A"])
-        [ "import qualified A"
-        , "import qualified Z.A"
-        ]
-    -- Unless it's a prefix match.
-    equal (f ["import-order-first: Z."]
-            ["import qualified Z.A", "import qualified A"])
-        [ "import qualified Z.A"
-        , "import qualified A"
-        ]
-
-test_showImportLine = do
-    let f = fmap (Config.showImportDecl style . Types.importDecl . head) . parse
-        style = Config.defaultFormat { Config._leaveSpaceForQualified = True }
-    -- pprint $ fmap (Types.importDecl . head) . parse $ "import A.B as C (x)"
-    equal (f "import A.B as C (x)") $ Right "import           A.B as C (x)"
-
-test_leaveSpaceForQualified = do
-    let f columns leaveSpace =
-            fmap (Config.showImportDecl (fmt columns leaveSpace) . head
-                . map Types.importDecl)
-            . parse
-        fmt columns leaveSpace = Config.defaultFormat
-            { Config._columns = columns
-            , Config._leaveSpaceForQualified = leaveSpace
-            }
-    equal (f 80 False "import Foo.Bar (a, b, c)") $
-        Right "import Foo.Bar (a, b, c)"
-    equal (f 80 True "import Foo.Bar (a, b, c)") $
-        Right "import           Foo.Bar (a, b, c)"
-
-    equal (f 20 False "import Foo.Bar (a, b, c)") $
-        Right "import Foo.Bar\n       (a, b, c)"
-    equal (f 30 True "import Foo.Bar (a, b, c)") $
-        Right "import           Foo.Bar\n       (a, b, c)"
-
-    equal (f 30 True "import Foo.Bar (tweetle, beetle, paddle, battle)") $ Right
-        "import           Foo.Bar\n\
-        \       (tweetle, beetle,\n\
-        \        paddle, battle)"
-
--- * util
-
-importLine :: Types.ImportDecl -> Types.ImportLine
-importLine decl = Types.ImportLine
-    { importDecl = decl
-    , importComments = []
-    , importSource = Types.Local
-    }
-
-parse :: String -> Either String [Types.ImportLine]
-parse source = case FixImports.parse [] "" source of
-    Haskell.ParseFailed srcloc err ->
-        Left $ Haskell.prettyPrint srcloc ++ ": " ++ err
-    Haskell.ParseOk (mod, _cmts) ->
-        Right $ map importLine $ FixImports.moduleImportDecls mod
 
 parseConfig :: [Text.Text] -> Config.Config
 parseConfig lines

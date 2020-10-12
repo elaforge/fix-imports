@@ -1,9 +1,9 @@
--- | Per-project 'Config' and functions to interpret it.
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PartialTypeSignatures #-} -- sort keys only care about Ord
 {-# OPTIONS_GHC -Wno-partial-type-signatures #-}
+-- | Parse the config file.
 module FixImports.Config where
 import           Control.Monad (foldM, unless)
 import           Data.Bifunctor (second)
@@ -11,18 +11,13 @@ import qualified Data.Char as Char
 import qualified Data.Either as Either
 import qualified Data.List as List
 import qualified Data.Map as Map
-import qualified Data.Maybe as Maybe
 import qualified Data.Text as Text
 import           Data.Text (Text)
 import qualified Data.Text.IO as Text.IO
 import qualified Data.Tuple as Tuple
 
-import qualified Language.Haskell.Exts as Haskell
-import qualified Language.Haskell.Exts.Extension as Extension
 import qualified System.FilePath as FilePath
 import qualified System.IO as IO
-import qualified Text.PrettyPrint as PP
-import           Text.PrettyPrint ((<+>))
 import qualified Text.Read as Read
 
 import qualified FixImports.Index as Index
@@ -35,14 +30,15 @@ data Config = Config {
     -- -i flag and 'include' config line.
     _includes :: [FilePath]
     -- | These language extensions are enabled by default.
-    , _language :: [Extension.Extension]
+    , _language :: [Types.Extension]
     -- | Import sort order.  Used by 'formatGroups'.
     , _order :: Order
     -- | Heuristics to pick the right module.  Used by 'pickModule'.
     , _modulePriority :: Priorities
     -- | Map unqualified names to the module to import for them.
-    , _unqualified :: Map.Map (Haskell.Name ()) Types.ModuleName
-    -- import-as: Data.Text.Lazy as DTL -> Map DTL Data.Text.Lazy
+    , _unqualified :: Map.Map Types.Name Types.ModuleName
+    -- | Map abbreviation to the complete qualification:
+    -- > import-as: Data.Text.Lazy as DTL -> [("DTL", "Data.Text.Lazy")]
     , _qualifyAs :: Map.Map Types.Qualification Types.Qualification
     , _format :: Format
     , _debug :: Bool
@@ -81,6 +77,8 @@ data Format = Format {
     , _leaveSpaceForQualified :: Bool
     -- | Number of columns to wrap to.
     , _columns :: Int
+    -- | How many spaces to indent a wrapped line.
+    , _wrapIndent :: Int
     } deriving (Eq, Show)
 
 -- | A simple pattern: @M.@ matches M and M.*.  Anything else matches exactly.
@@ -112,6 +110,7 @@ defaultFormat = Format
     { _groupImports = True
     , _leaveSpaceForQualified = False
     , _columns = 80
+    , _wrapIndent = 4
     }
 
 -- | Parse .fix-imports file.
@@ -203,8 +202,7 @@ parseFormat = foldM set defaultFormat
 
 -- |
 -- "A.B(c); Q(r)" -> [Right ("A.B", "c"), Right ("Q", "r")]
-parseUnqualified :: Text
-    -> [Either Text (Types.ModuleName, Haskell.Name ())]
+parseUnqualified :: Text -> [Either Text (Types.ModuleName, Types.Name)]
 parseUnqualified = concatMap (parse . Text.break (=='('))  . Text.splitOn ";"
     where
     parse (pre, post)
@@ -217,10 +215,10 @@ parseUnqualified = concatMap (parse . Text.break (=='('))  . Text.splitOn ";"
         | otherwise = [Left $ "expected parens: " <> showt post]
 
 -- |
--- "A.B" "(c)" -> (Haskell.Ident () "c", "A.B")
--- "A.B" "((+))" -> (Haskell.Symbol () "+", "A.B")
+-- "A.B" "(c)" -> (Types.Name "c", "A.B")
+-- "A.B" "((+))" -> (Types.Operator "+", "A.B")
 parseUnqualifiedImport :: Text -> Text
-    -> Either Text (Types.ModuleName, Haskell.Name ())
+    -> Either Text (Types.ModuleName, Types.Name)
 parseUnqualifiedImport pre post = do
     unless (Text.all isModuleChar pre) $
         Left $ "this doesn't look like a module name: " <> showt pre
@@ -228,11 +226,11 @@ parseUnqualifiedImport pre post = do
     case hasParens post of
         Just op
             | Text.all Util.haskellOpChar op ->
-                Right (module_, Haskell.Symbol () (Text.unpack op))
+                Right (module_, Types.Operator (Text.unpack op))
             | otherwise -> Left $ "non-symbols in operator: " <> showt post
         Nothing
             | Text.all (not . Util.haskellOpChar) post ->
-                Right (module_, Haskell.Ident () (Text.unpack post))
+                Right (module_, Types.Name (Text.unpack post))
             | otherwise ->
                 Left $ "symbol char in id, use parens: " <> showt post
     where
@@ -260,12 +258,9 @@ hasParens s
         Just $ Text.drop 1 $ Text.dropEnd 1 s
     | otherwise = Nothing
 
-parseLanguage :: [Text] -> ([Text], [Extension.Extension])
+parseLanguage :: [Text] -> ([Text], [Types.Extension])
 parseLanguage = Either.partitionEithers . map parse
-    where
-    parse w = case Extension.parseExtension (Text.unpack w) of
-        Extension.UnknownExtension _ -> Left w
-        ext -> Right ext
+    where parse w = maybe (Left w) Right $ Types.parseExtension $ Text.unpack w
 
 -- * pick candidates
 
@@ -326,182 +321,6 @@ searchPrio high low mod = case List.findIndex (== mod) high of
     Just n -> - length high + n
     Nothing -> maybe 0 (+1) (List.findIndex (== mod) low)
 
-
--- * format imports
-
--- | Format import list.  Imports are alphabetized and grouped into sections
--- based on the top level module name (before the first dot).  Sections that
--- are too small are grouped with the section below them.
---
--- The local imports are sorted and grouped separately from the package
--- imports.  Rather than being alphabetical, they are sorted in a per-project
--- order that should be general-to-specific.
---
--- An unqualified import will follow a qualified one.  The Prelude, if
--- imported, always goes first.
-formatGroups :: Format -> Order -> [Types.ImportLine] -> String
-formatGroups format order imports =
-    unlines $ joinGroups
-        [ showGroups (group (Util.sortOn packagePrio package))
-        , showGroups (group (Util.sortOn localPrio local))
-        , showGroups [Util.sortOn name unqualified]
-        ]
-    where
-    packagePrio import_ =
-        ( name import_ /= prelude
-        , name import_
-        , qualifiedPrio import_
-        )
-    localPrio import_ =
-        ( localPriority (_importOrder order) (Types.importModule import_)
-        , name import_
-        , qualifiedPrio import_
-        )
-    qualifiedPrio = not . qualifiedImport
-    name = Types.importModule
-    (unqualified, local, package) = Util.partition2
-        ((_sortUnqualifiedLast order &&) . isUnqualified . Types.importDecl)
-        ((==Types.Local) . Types.importSource)
-        imports
-    group
-        | _groupImports format = collapse . Util.groupOn topModule
-        | otherwise = (:[])
-    topModule = takeWhile (/='.') . Types.moduleName . Types.importModule
-    collapse [] = []
-    collapse (x:xs)
-        | length x <= 2 = case collapse xs of
-            [] -> [x]
-            y : ys -> (x ++ y) : ys
-        | otherwise = x : collapse xs
-    showGroups = List.intercalate [""] . map (map (showImport format))
-    joinGroups = List.intercalate [""] . filter (not . null)
-    prelude = Types.ModuleName "Prelude"
-
-isUnqualified :: Haskell.ImportDecl a -> Bool
-isUnqualified imp = not (Haskell.importQualified imp)
-    && Maybe.isNothing (Haskell.importSpecs imp)
-
--- | Modules whose top level element is in 'importFirst' go first, ones in
--- 'importLast' go last, and the rest go in the middle.
---
--- Like 'searchPrio' but for order.
-localPriority :: Priority ModulePattern -> Types.ModuleName
-    -> (Int, Maybe Int)
-localPriority prio import_ =
-    case List.findIndex (`matchModule` import_) firsts of
-        Just k -> (-1, Just k)
-        Nothing -> case List.findIndex (`matchModule` import_) lasts of
-            Nothing -> (0, Nothing)
-            Just k -> (1, Just k)
-    where
-    firsts = high prio
-    lasts = low prio
-
-qualifiedImport :: Types.ImportLine -> Bool
-qualifiedImport = Haskell.importQualified . Types.importDecl
-
-showImport :: Format -> Types.ImportLine -> String
-showImport format (Types.ImportLine decl cmts _) =
-    above ++ showImportDecl format decl
-        ++ (if null right then "" else ' ' : right)
-    where
-    above = concat [cmt ++ "\n" | Types.Comment Types.CmtAbove cmt <- cmts]
-    right = Util.join "\n" [cmt | Types.Comment Types.CmtRight cmt <- cmts]
-
-showImportDecl :: Format -> Types.ImportDecl -> String
-showImportDecl format = PP.renderStyle style . prettyImportDecl format
-    where
-    style = Haskell.style
-        { Haskell.lineLength = _columns format
-        , Haskell.ribbonsPerLine = 1
-        }
-
--- showImportDecl format = case _ppConfig format of
---     Nothing -> Haskell.prettyPrintStyleMode style Haskell.defaultMode
---     Just config -> PP.renderStyle style . prettyImportDecl config
---     where
---     style = Haskell.style
---         { Haskell.lineLength = _columns format
---         , Haskell.ribbonsPerLine = 1
---         }
-
-prettyImportDecl :: Format -> Haskell.ImportDecl a -> PP.Doc
-prettyImportDecl format
-        (Haskell.ImportDecl _ m qual src safe mbPkg mbName mbSpecs) = do
-    mySep
-        [ "import"
-        , if qual || not (_leaveSpaceForQualified format) then mempty
-            else PP.text (replicate (length ("qualified" :: String)) ' ')
-        , if src then "{-# SOURCE #-}" else mempty
-        , if safe then "safe" else mempty
-        , if qual then "qualified" else mempty
-        , maybe mempty (\s -> PP.text (show s)) mbPkg
-        , nameOf m
-        , maybe mempty (\m -> "as" <+> nameOf m) mbName
-        , maybe mempty prettyImportSpecList mbSpecs
-        ]
-        where
-        nameOf (Haskell.ModuleName _ s) = PP.text s
-
--- ** Language.Haskell.Exts.Pretty copy-paste
-
--- Language.Haskell.Exts.Pretty doesn't export the pretty method.
---
--- Ironically the haskell-src-exts complains about having to copy paste
--- PP.punctuate, which is no longer necessary, while forcing me to copy paste
--- much more, by committing the same mistake.
-
-prettyImportSpecList :: Haskell.ImportSpecList a -> PP.Doc
-prettyImportSpecList (Haskell.ImportSpecList _ b ispecs) =
-    (if b then "hiding" else mempty) <+> parenList (map prettyISpec ispecs)
-
-prettyISpec :: Haskell.ImportSpec a -> PP.Doc
-prettyISpec = \case
-    Haskell.IVar _ name -> prettyName name
-    Haskell.IAbs _ ns name -> prettyNamespace ns <+> prettyName name
-    Haskell.IThingAll _ name -> prettyName name <> PP.text "(..)"
-    Haskell.IThingWith _ name nameList ->
-        prettyName name <> (parenList . map prettyCName $ nameList)
-
-prettyName :: Haskell.Name l -> PP.Doc
-prettyName name = case name of
-    Haskell.Symbol _ ('#':_) -> PP.char '(' <+> ppName name <+> PP.char ')'
-    _ -> parensIf (isSymbolName name) (ppName name)
-
-prettyCName :: Haskell.CName l -> PP.Doc
-prettyCName = \case
-    Haskell.VarName _ n -> prettyName n
-    Haskell.ConName _ n -> prettyName n
-
-prettyNamespace :: Haskell.Namespace l -> PP.Doc
-prettyNamespace = \case
-    Haskell.NoNamespace {} -> mempty
-    Haskell.TypeNamespace {} -> "type"
-    Haskell.PatternNamespace {} -> "pattern"
-
-parensIf :: Bool -> PP.Doc -> PP.Doc
-parensIf True = PP.parens
-parensIf False = id
-
-isSymbolName :: Haskell.Name l -> Bool
-isSymbolName (Haskell.Symbol {}) = True
-isSymbolName _ = False
-
-
-ppName :: Haskell.Name l -> PP.Doc
-ppName (Haskell.Ident _ s) = PP.text s
-ppName (Haskell.Symbol _ s) = PP.text s
-
-parenList :: [PP.Doc] -> PP.Doc
-parenList = PP.parens . PP.fsep . PP.punctuate PP.comma
-
-pretty :: Haskell.Pretty a => a -> PP.Doc
-pretty _ = "?"
-
-mySep :: [PP.Doc] -> PP.Doc
-mySep [] = error "mySep got empty"
-mySep [x] = x
-mySep (x:xs) = x <+> PP.fsep xs
 
 -- * log
 

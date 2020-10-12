@@ -1,18 +1,18 @@
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE OverloadedStrings #-}
 module FixImports.FixImports_test where
-import Control.Monad (unless, void)
+import           Control.Monad (unless, void)
 import qualified Control.Monad.Identity as Identity
 import qualified Control.Monad.State.Strict as State
-import Data.Bifunctor (bimap)
+import           Data.Bifunctor (bimap)
 import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
 import qualified Data.Set as Set
 import qualified Data.Text as Text
 import qualified Data.Time.Clock.POSIX as Clock.POSIX
+import qualified System.IO.Unsafe as Unsafe
 
-import qualified Language.Haskell.Exts as Haskell
 import qualified System.FilePath as FilePath
 
 import qualified FixImports.Config as Config
@@ -30,38 +30,49 @@ test_simple = do
             [ ("pkg", ["A.B"])
             , ("zpkg", ["Z"])
             ]
-    equal (run "" "x = B.c") $ Right "import qualified A.B as B\n"
-    equal (run "" "x = A.B.c") $ Right "import qualified A.B\n"
+    rightEqual (run "" "x = B.c") "import qualified A.B as B\n"
+    rightEqual (run "" "x = A.B.c") "import qualified A.B\n"
     leftLike (run "" "x = Q.c") "not found: Q"
     -- Remove unused.
-    equal (run "" "import qualified A.B as B\n\nx = y") $ Right ""
+    rightEqual (run "" "import qualified A.B as B\n\nx = y") ""
     -- Unless it's unqualified.
-    equal (run "" "import A.B as B\n\nx = y") $ Right
+    rightEqual (run "" "import A.B as B\n\nx = y")
         "import A.B as B\n"
 
     -- Local goes below package.
-    equal (run "" "x = (B.a, C.a, Z.a)") $ Right
+    rightEqual (run "" "x = (B.a, C.a, Z.a)")
         "import qualified A.B as B\n\
         \import qualified Z\n\
         \\n\
         \import qualified C\n"
 
     -- Don't mess with imports I don't manage.
-    equal (run "" "import A.B hiding (mod)\n") $
-        Right "import A.B hiding (mod)\n"
-    equal (run "" "import A.B\n") $
-        Right "import A.B\n"
+    rightEqual (run "" "import A.B hiding (mod)\n") "import A.B hiding (mod)\n"
+    rightEqual (run "" "import A.B\n") "import A.B\n"
+
+test_comments = do
+    let run = fmap FixImports.resultImports
+            . fixModule index [] (mkConfig "") "A.hs"
+        index = Index.makeIndex [("pkg", ["A"])]
+    rightEqual (run "import A") "import A\n"
+    rightEqual (run "module M where\n-- above\nimport A -- right\n-- below")
+        "-- above\n\
+        \import A -- right\n"
+    rightEqual (run "-- above1\n-- above2\nimport A {- right -}\n")
+        "-- above1\n\
+        \-- above2\n\
+        \import A {- right -}\n"
 
 test_qualifyAs = do
     let run config files = fmap eResult . fixModule index files config "A.hs"
         config = mkConfig "qualify-as: Data.Text.Lazy as DTL"
         index = Index.makeIndex [("text", ["Data.Text.Lazy"])]
-    equal (run config [] "x = DTL.y") $ Right
+    rightEqual (run config [] "x = DTL.y")
         ( ["Data.Text.Lazy"]
         , []
         , "import qualified Data.Text.Lazy as DTL\n"
         )
-    equal (run config [] "import qualified Data.Text.Lazy as DTL\n") $ Right
+    rightEqual (run config [] "import qualified Data.Text.Lazy as DTL\n")
         ( []
         , ["Data.Text.Lazy"]
         , ""
@@ -69,15 +80,15 @@ test_qualifyAs = do
 
     -- qualifyAs aliases are prioritized in the same way as others, so
     -- the local module wins:
-    equal (run config ["DTL.hs"] "x = DTL.y") $
-        Right (["DTL"], [], "import qualified DTL\n")
+    rightEqual (run config ["DTL.hs"] "x = DTL.y")
+        (["DTL"], [], "import qualified DTL\n")
 
     -- Unless explicitly suppressed:
     let config2 = mkConfig $ Text.unlines
             [ "qualify-as: Data.Text.Lazy as DTL"
             , "prio-module-high: Data.Text.Lazy"
             ]
-    equal (run config2 ["DTL.hs"] "x = DTL.y") $ Right
+    rightEqual (run config2 ["DTL.hs"] "x = DTL.y")
         ( ["Data.Text.Lazy"]
         , []
         , "import qualified Data.Text.Lazy as DTL\n"
@@ -85,40 +96,38 @@ test_qualifyAs = do
 
 test_unqualified = do
     let run config = fmap eResult
-            . fixModule index ["C.hs"] (mkConfig config) "A.hs"
+            . fixModule index ["C.hs"] (mkConfig ("unqualified: " <> config))
+                "A.hs"
         index = Index.makeIndex
             [ ("pkg", ["A.B"])
             , ("zpkg", ["Z"])
             ]
-    equal (run "unqualified: A.B (c)" "x = (c, c)") $ Right
+    rightEqual (run "A.B (c)" "x = (c, c)")
         ( ["A.B"]
         , []
         , "import A.B (c)\n"
         )
-
     -- Modify an existing import.
-    equal (run "unqualified: A.B (c)" "import A.B (a, z)\nx = (c, c)") $ Right
+    rightEqual (run "A.B (c)" "import A.B (a, z)\nx = (c, c)")
         ( []
         , []
         , "import A.B (a, c, z)\n"
         )
-    equal (run "unqualified: A.B (a, c)" "import A.B (a, c)\nx = a") $ Right
+    rightEqual (run "A.B (a, c)" "import A.B (a, c)\nx = a")
         ( []
         , []
         , "import A.B (a)\n"
         )
     -- Don't accumulate duplicates.
-    equal (run "unqualified: A.B (c)" "import A.B (c)\nx = c") $
-        Right ([], [], "import A.B (c)\n")
-    equal (run "unqualified: A.B (C)" "import A.B (C)\nx :: C") $
-        Right ([], [], "import A.B (C)\n")
-
+    rightEqual (run "A.B (c)" "import A.B (c)\nx = c")
+        ([], [], "import A.B (c)\n")
+    rightEqual (run "A.B (C)" "import A.B (C)\nx :: C")
+        ([], [], "import A.B (C)\n")
     -- Don't manage it if it's not mine.
-    equal (run "unqualified: A.B (c)" "import A.B (d)") $ Right
+    rightEqual (run "A.B (c)" "import A.B (d)")
         ([], [], "import A.B (d)\n")
-
     -- local still goes below package
-    equal (run "unqualified: C (a)" "import A.B\nimport Z\nx = a") $ Right
+    rightEqual (run "C (a)" "import A.B\nimport Z\nx = a")
         ( ["C"]
         , []
         , "import A.B\n\
@@ -126,18 +135,22 @@ test_unqualified = do
           \\n\
           \import C (a)\n"
         )
-
-    -- Don't import when it's an assignee.
-    equal (run "unqualified: A.B (c)" "c = x") $ Right ([], [], "")
-    equal (run "unqualified: A.B ((</>))" "x = a </> b") $
-        Right (["A.B"], [], "import A.B ((</>))\n")
-
+    -- Don't import when it's on the lhs.
+    rightEqual (run "A.B (c)" "c = x") ([], [], "")
+    rightEqual (run "A.B ((</>))" "x = a </> b")
+        (["A.B"], [], "import A.B ((</>))\n")
+    -- Add and remove operators
+    rightEqual (run "A.B ((</>))" "x = a </> b")
+        (["A.B"], [], "import A.B ((</>))\n")
+    rightEqual (run "A.B ((</>))" "import A.B ((</>))\nx = a b")
+        ([], ["A.B"], "")
     -- Removed unused.
-    equal (run "unqualified: A.B (c)" "import A.B (c)\nx = x\n") $
-        Right ([], ["A.B"], "")
-    -- But not if it's a spec-less import.
-    equal (run "unqualified: A.B (c)" "import A.B\nx = x\n") $
-        Right ([], [], "import A.B\n")
+    rightEqual (run "A.B (c)" "import A.B (c)\nx = x\n") ([], ["A.B"], "")
+    -- But not if it's a everything-import.
+    rightEqual (run "A.B (c)" "import A.B\nx = x\n") ([], [], "import A.B\n")
+
+
+-- * implementation
 
 eResult :: FixImports.Result -> ([Types.ModuleName], [Types.ModuleName], String)
 eResult r =
@@ -149,13 +162,13 @@ eResult r =
 fixModule :: Index.Index -> [FilePath]
     -> Config.Config -> FilePath -> String -> Either String FixImports.Result
 fixModule index files config modulePath source =
-    case FixImports.parse (Config._language config) modulePath source of
-        Haskell.ParseFailed srcloc err ->
-            Left $ Haskell.prettyPrint srcloc ++ ": " ++ err
-        Haskell.ParseOk (mod, cmts) ->
+    case Unsafe.unsafePerformIO $
+            FixImports.parse (Config._language config) modulePath source of
+        Left err -> Left err
+        Right (mod, cmts) ->
             fst $ Identity.runIdentity $ flip State.runStateT [] $
             FixImports.fixImports (pureFilesystem files) config index
-                modulePath mod cmts
+                modulePath (FixImports.extract config mod cmts)
 
 -- | The ./ stuff is tricky, this is probably still wrong.
 pureFilesystem :: [FilePath] -> FixImports.Filesystem Identity.Identity

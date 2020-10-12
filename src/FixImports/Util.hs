@@ -113,6 +113,11 @@ modifyAt match modify = go
         | match x = Just (modify x : xs)
         | otherwise = (x:) <$> go xs
 
+setmap :: (Ord k, Ord a) => [(k, a)] -> Map.Map k (Set.Set a)
+setmap = Map.fromAscList
+    . map (\gs -> (fst (List.head gs), Set.fromList (map snd gs)))
+    . groupOn fst . sortOn fst
+
 multimap :: Ord k => [(k, a)] -> Map.Map k [a]
 multimap = Map.fromAscList . map (\gs -> (fst (List.head gs), map snd gs))
     . groupOn fst . sortOn fst
@@ -177,4 +182,3 @@ readProcessWithExitCode cmd args = do
     IO.hClose errh
     ex <- Process.waitForProcess pid
     return (ex, out, err)
-

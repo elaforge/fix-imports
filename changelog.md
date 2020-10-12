@@ -1,3 +1,7 @@
+- switch from haskell-src-exts to ghc-lib-parser.  This fixes a bunch of
+parsing bugs.  Along the way I fixed a bug where locally bound names were
+misinterpreted as unqualified names.
+
 ### 2.3.0
 
 - add --edit flag, so I can just replace imports, instead of the whole file

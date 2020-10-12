@@ -42,7 +42,9 @@ executable fix-imports
     other-modules:
         FixImports.Config
         FixImports.FixImports
+        FixImports.Format
         FixImports.Index
+        FixImports.Parse
         FixImports.Types
         FixImports.Util
         Paths_fix_imports
@@ -55,7 +57,8 @@ executable fix-imports
         , deepseq
         , directory
         , filepath
-        , haskell-src-exts >= 1.16.0
+        , ghc-lib-parser
+        , ghc-lib-parser-ex
         , mtl
         , pretty
         , process
@@ -80,13 +83,14 @@ test-suite test
         , deepseq
         , directory
         , filepath
-        , haskell-src-exts >= 1.16.0
+        , ghc-lib-parser
+        , ghc-lib-parser-ex
         , mtl
+        , pretty
         , process
         , split
         , text
         , time
-        , pretty
         , uniplate
 
         , test-karya
