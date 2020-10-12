@@ -42,7 +42,7 @@ cleanup:
   * put FixImports.Extracted into NFData and use that for metrics
 
 bug:
-  - don't walk into symlinks
+  * don't walk into symlinks
   - at least detect CPP in the import block, and do an error, instead of
     silently mangling it.
   * warn about duplicate config entries

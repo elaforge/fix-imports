@@ -150,10 +150,14 @@ ioFilesystem :: Filesystem IO
 ioFilesystem = Filesystem
     { _listDir = \ dir -> do
         fns <- Maybe.fromMaybe [] <$> Util.catchENOENT (Util.listDir dir)
-        Util.partitionM Directory.doesDirectoryExist fns
+        Util.partitionM isDir fns
     , _doesFileExist = Directory.doesFileExist
     , _metric = metric
     }
+    where
+    -- Symlinks are not directories, so I don't walk into them.
+    isDir fn = (&&) <$> Directory.doesDirectoryExist fn
+        <*> (not <$> Directory.pathIsSymbolicLink fn)
 
 type LogT m a = State.StateT [Text] m a
 
