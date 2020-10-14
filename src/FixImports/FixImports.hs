@@ -435,7 +435,9 @@ isPackageModule index (Types.ModuleName name) =
 
 -- | All the relevant info extracted from a module.
 data Extracted = Extracted {
+    -- | References exist, but no corresponding imports.
     _missingImports :: Set.Set Types.Qualification
+    -- | Imports exist but no reference.
     , _unusedImports :: Set.Set Types.ModuleName
     , _unchangedImports :: [ImportComment]
     , _importRange :: (Int, Int)
@@ -481,7 +483,22 @@ extract config mod cmts = Extracted
     modules = map Types._importName imports
     used = Parse.qualifications mod
     qualifiedImports = map Types.importQualification imports
-    imports = Parse.extractImports mod
+    imports = normalizeImports $ Parse.extractImports mod
+
+-- | Clean up redundant imports.
+normalizeImports :: [Types.Import] -> [Types.Import]
+normalizeImports imports =
+    Util.uniqueOn key qual
+    ++ map merge (Util.groupOn key (Util.sortOn key unqual))
+    where
+    (qual, unqual) = List.partition Types._importQualified imports
+    key imp = imp
+        { Types._importEntities = Nothing
+        , Types._importSpan = Types.noSpan
+        }
+    merge group@(imp:_) = imp
+        { Types._importEntities = mconcat (map Types._importEntities group) }
+    merge [] = error "groupOn postcondition"
 
 -- | Pair Imports up with the comments that apply to them.  Comments
 -- below the last import are dropped, but there shouldn't be any of those

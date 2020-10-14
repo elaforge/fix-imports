@@ -131,6 +131,9 @@ partitionOn f = go
         Nothing -> (bs, x:as)
         where (bs, as) = go xs
 
+uniqueOn :: Ord k => (a -> k) -> [a] -> [a]
+uniqueOn key xs = Map.elems $ Map.fromList $ zip (map key xs) xs
+
 -- * control
 
 ifM :: Monad m => m Bool -> m a -> m a -> m a

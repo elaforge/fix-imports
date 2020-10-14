@@ -77,11 +77,11 @@ test_comments = do
             ((x1, y1, x2, y2), cmt)
     apply1 rightEqual (f "module M where\n") []
     apply1 rightEqual (f "-- above\nimport X -- right\n")
-        [((2, 10, 2, 18), "-- right"), ((1, 1, 1, 9), "-- above")]
+        [((1, 10, 1, 18), "-- right"), ((0, 1, 0, 9), "-- above")]
     apply1 rightEqual (f "-- | above\nimport X {- right -}\n")
-        [((2, 10, 2, 21), "{- right -}"), ((1, 1, 1, 11), "-- | above")]
+        [((1, 10, 1, 21), "{- right -}"), ((0, 1, 0, 11), "-- | above")]
     apply1 rightEqual (f "-- *** section\nimport X {- ^ right -}\n")
-        [((2, 10, 2, 23), "{- ^ right -}"), ((1, 1, 1, 15), "-- *** section")]
+        [((1, 10, 1, 23), "{- ^ right -}"), ((0, 1, 0, 15), "-- *** section")]
 
 test_extractEntity = do
     let f = fmap extractEntities . parse

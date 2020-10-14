@@ -61,7 +61,7 @@ data Import = Import {
     , _importHiding :: !Bool -- ^ import list is hiding
     , _importEntities :: !(Maybe [Either Error Entity])
     , _importSpan :: !SrcSpan
-    } deriving (Eq, Show)
+    } deriving (Eq, Ord, Show)
 
 instance DeepSeq.NFData Import where
     rnf imp = _importPkgQualifier `deepseq` _importEntities imp `deepseq` ()

@@ -24,31 +24,34 @@ import EL.Test.Global
 
 
 test_simple = do
-    let run config = fmap FixImports.resultImports
-            . fixModule index ["C.hs"] (mkConfig config) "A.hs"
+    let run = fmap FixImports.resultImports
+            . fixModule index ["C.hs"] (mkConfig "") "A.hs"
         index = Index.makeIndex
             [ ("pkg", ["A.B"])
             , ("zpkg", ["Z"])
             ]
-    rightEqual (run "" "x = B.c") "import qualified A.B as B\n"
-    rightEqual (run "" "x = A.B.c") "import qualified A.B\n"
-    leftLike (run "" "x = Q.c") "not found: Q"
+    rightEqual (run "x = B.c") "import qualified A.B as B\n"
+    rightEqual (run "x = A.B.c") "import qualified A.B\n"
+    leftLike (run "x = Q.c") "not found: Q"
     -- Remove unused.
-    rightEqual (run "" "import qualified A.B as B\n\nx = y") ""
+    rightEqual (run "import qualified A.B as B\n\nx = y") ""
     -- Unless it's unqualified.
-    rightEqual (run "" "import A.B as B\n\nx = y")
+    rightEqual (run "import A.B as B\n\nx = y")
         "import A.B as B\n"
 
     -- Local goes below package.
-    rightEqual (run "" "x = (B.a, C.a, Z.a)")
+    rightEqual (run "x = (B.a, C.a, Z.a)")
         "import qualified A.B as B\n\
         \import qualified Z\n\
         \\n\
         \import qualified C\n"
 
     -- Don't mess with imports I don't manage.
-    rightEqual (run "" "import A.B hiding (mod)\n") "import A.B hiding (mod)\n"
-    rightEqual (run "" "import A.B\n") "import A.B\n"
+    rightEqual (run "import A.B hiding (mod)\n") "import A.B hiding (mod)\n"
+    rightEqual (run "import A.B\n") "import A.B\n"
+    -- remove redundant imports
+    rightEqual (run "import qualified Z\nimport qualified Z\nf = Z.a")
+        "import qualified Z\n"
 
 test_comments = do
     let run = fmap FixImports.resultImports
@@ -80,7 +83,7 @@ test_comments = do
 test_qualifyAs = do
     let run config files = fmap eResult . fixModule index files config "A.hs"
         config = mkConfig "qualify-as: Data.Text.Lazy as DTL"
-        index = Index.makeIndex [("text", ["Data.Text.Lazy"])]
+        index = Index.makeIndex [("text", ["Data.Text.Lazy"]), ("pkg", ["A"])]
     rightEqual (run config [] "x = DTL.y")
         ( ["Data.Text.Lazy"]
         , []
@@ -106,6 +109,22 @@ test_qualifyAs = do
         ( ["Data.Text.Lazy"]
         , []
         , "import qualified Data.Text.Lazy as DTL\n"
+        )
+
+    -- strip duplicates
+    rightEqual (run config2 []
+        "import qualified Data.Text.Lazy as DTL\n\
+        \import qualified Data.Text.Lazy as DTL\n\
+        \x = DTL.y")
+        ([], [], "import qualified Data.Text.Lazy as DTL\n")
+    -- not confused by other imports with the same name
+    rightEqual (run config2 []
+        "import qualified A as DTL\n\
+        \import qualified Data.Text.Lazy as DTL\n\
+        \x = DTL.y")
+        ( []
+        , []
+        , "import qualified A as DTL\nimport qualified Data.Text.Lazy as DTL\n"
         )
 
 test_unqualified = do
@@ -160,6 +179,10 @@ test_unqualified = do
         ([], ["A.B"], "")
     -- Removed unused.
     rightEqual (run "A.B (c)" "import A.B (c)\nx = x\n") ([], ["A.B"], "")
+    rightEqual
+        (run "A.B (c)"
+            "import A.B (c)\nimport A.B (c, d)\nimport A.B (d)\nx = d\n")
+        ([], [], "import A.B (d)\n")
     -- But not if it's a everything-import.
     rightEqual (run "A.B (c)" "import A.B\nx = x\n") ([], [], "import A.B\n")
 
