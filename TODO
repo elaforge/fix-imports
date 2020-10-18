@@ -1,59 +1,5 @@
 * done; - not done; / decided against
 
-use ghc-lib-parser:
-  * extract a parser interface to FixImports.Parse
-  * change FixImports to use that interface
-  * implement importDeclModifyList
-    . I must either go from Name back to the full type, or parse ImportDecl to
-      something simpler.
-    . E.g. Unparsed String | Parsed Qualified Name (Maybe [Entity])
-    1.
-      . If I can use Outputable losslessly on ImportDecl, then I need a
-        function to modify the IEs, one to get sort order, ...
-      . Outputable works, but it's not lossless, it inserts extra spaces.
-        But I'll do my own formatting for parsed ones, and maybe I don't care
-        about the rest?
-    2.
-      . If I can get the unparsed string, then I can work with the simpler
-        ImportDecl above.  It's easy to work with, print, can be formatted,
-        and unrecognized ones are preserved.
-      . Apparently Hs.ideclSourceSrc, but it's always NoSourceText!?  Maybe
-        I need a special parsing flag.
-      . ideclSourceSrc is for the SOURCE pragma.
-  / Can I have both old and new parsers co-exist?
-    . There's no reason to keep haskell-src-exts around if the new parser does
-      all the same stuff but better.
-    . It's just to avoid break the world during the transition.
-    . Unqualifieds uses Haskell.Name.
-    . type ImportLine = (Types.ImportDecl, [Types.Comment])
-  * Configure DynFlags: language, ...
-    . ghc-exactprint has stuff to figure out flags / CPP from the file
-      I could also apply it unconditionally, as I currently do.
-    . https://hackage.haskell.org/package/ghc-exactprint-0.6.3.2/docs/src/Language.Haskell.GHC.ExactPrint.Parsers.html#initDynFlags
-  * support comments
-    . ghc-exactprint does it
-  * test pretty printer
-
-  * I use a pretty-printer from haskell-src-exts, does ghc have one?
-    . Is Outputable instance appropriate?
-    . But I hacked up my own pretty-printing for to qualified spaces.
-
-cleanup:
-  * put FixImports.Extracted into NFData and use that for metrics
-
-bug:
-  * don't walk into symlinks
-  * at least detect CPP in the import block, and do an error, instead of
-    silently mangling it.
-  * warn about duplicate config entries
-  * unqualified imports cause imports due to symbols not in call position
-    . Parse.moduleUnqualifieds should only look on the RHS of HsDecl:
-      TyClD, InstD, ValD, SigD, ...
-      -> HsExpr... maybe I just have to get any RdrName.Unqual below an HsExpr?
-  * It wants to manage unqualified imports it shouldn't
-    . if I have 'unqualified: Control.Monad.when', it will delete a
-      'import Control.Monad (unless)'
-
 feature:
   - support nix-style cabal
     I need to get ghc-pkg to see the local packages... is it one of those
@@ -89,13 +35,6 @@ feature:
           export GHC_PACKAGE_PATH=$(stack path --ghc-package-path)
           PATH=$(stack path --compiler-bin):$PATH
       fi
-
-  * haskell-src-exts is buggy.  Can I use the ghc parser yet?
-    . Also it doesn't support toplevel or nonquote SCCs.
-    . ghc-lib-parser
-    . ghc-parser package?
-    . But I thought this was tied to the trees that grow changes?
-    . ghc-syntax-highlighter - uses lexer?
 
   / Optionally write a cache of the package db.
     . No need, most time is spent parsing.
