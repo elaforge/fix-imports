@@ -1,5 +1,10 @@
 * done; - not done; / decided against
 
+bug:
+  * Ignore unqualified names if they're already imported from a different
+    module.
+  - It wants to import unqualified names defined in the module.
+
 feature:
   - support nix-style cabal
     I need to get ghc-pkg to see the local packages... is it one of those

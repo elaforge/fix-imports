@@ -44,7 +44,7 @@ import Prelude hiding (mod)
 import qualified Control.Monad.State.Strict as State
 import qualified Control.DeepSeq as DeepSeq
 import           Control.Monad.Trans (lift)
-import           Data.Bifunctor (first)
+import           Data.Bifunctor (first, second)
 import qualified Data.Char as Char
 import qualified Data.Either as Either
 import qualified Data.List as List
@@ -71,7 +71,7 @@ import qualified FixImports.Parse as Parse
 import qualified FixImports.Types as Types
 import qualified FixImports.Util as Util
 
-import Control.Monad
+import           Control.Monad
 
 
 -- | Look only this deep in the directory hierarchy for local modules.
@@ -245,7 +245,6 @@ locateImport fs (decl, cmts) = do
         , importSource = if isLocal then Types.Local else Types.Package
         }
 
-
 -- | Add unqualified imports.
 --
 -- - Get unqualifieds.
@@ -260,19 +259,15 @@ fixUnqualified modToUnqualifieds config imports =
     removeEmptyImports moduleToNames $
         first (map (first stripReferences)) $
         foldr addReferences (imports, []) $
+        filter (not . Set.null . snd) $
+        map (second (Set.filter (not . alreadyImported))) $
         Map.toList modToUnqualifieds
     where
-    -- Remove managed unqualified imports that are no longer referenced.
-    stripReferences :: Types.Import -> Types.Import
-    stripReferences imp = Types.importModify (filter keep) imp
-        where
-        moduleName = Types._importName imp
-        -- Keep if it's not managed, or it is managed and referenced.
-        keep (Types.Entity Nothing var Nothing) =
-            not (isManaged moduleName var)
-            || maybe False (var `Set.member`)
-                (Map.lookup moduleName modToUnqualifieds)
-        keep _ = True
+    -- Ignore unqualified references that are already imported, perhaps from
+    -- some other module.
+    alreadyImported :: Types.Name -> Bool
+    alreadyImported name = any ((name `elem`) . importedEntities . fst) imports
+
     -- Successively modify the ImportComment list for each new reference.  Keep
     -- existing modified imports separate from newly added ones, so they can be
     -- reported as adds.
@@ -288,15 +283,30 @@ fixUnqualified modToUnqualifieds config imports =
         newImport = (Types.makeImport moduleName)
             { Types._importEntities = Just $ map Right newEntities }
         newEntities = map mkEntity $ Set.toList names
-    matches name imp = Types.importUnqualified imp
-        && Types._importName imp == name
+        matches name imp = Types.importUnqualified imp
+            && Types._importName imp == name
 
+    -- Remove managed unqualified imports that are no longer referenced.
+    stripReferences :: Types.Import -> Types.Import
+    stripReferences imp = Types.importModify (filter keep) imp
+        where
+        moduleName = Types._importName imp
+        -- Keep if it's not managed, or it is managed and referenced.
+        keep (Types.Entity Nothing var Nothing) =
+            not (isManaged moduleName var)
+            || maybe False (var `Set.member`)
+                (Map.lookup moduleName modToUnqualifieds)
+        keep _ = True
     isManaged moduleName name = maybe False (name `elem`) $
         Map.lookup moduleName moduleToNames
     moduleToNames :: Map Types.ModuleName [Types.Name]
     moduleToNames = Util.multimap . map Tuple.swap . Map.toList
         . Config._unqualified $ config
     mkEntity var = Types.Entity Nothing var Nothing
+
+importedEntities :: Types.Import -> [Types.Name]
+importedEntities = map Types._entityVar . Either.rights . Maybe.fromMaybe []
+    . Types._importEntities
 
 -- | Remove unqualified imports that have been made empty.
 removeEmptyImports :: Map Types.ModuleName names -> ([ImportComment], new)

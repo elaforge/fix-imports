@@ -185,6 +185,8 @@ test_unqualified = do
         ([], [], "import A.B (d)\n")
     -- But not if it's a everything-import.
     rightEqual (run "A.B (c)" "import A.B\nx = x\n") ([], [], "import A.B\n")
+    -- Ignore if it's already imported unqualified.
+    rightEqual (run "A.B (c)" "import Z (c)\nx = c") ([], [], "import Z (c)\n")
 
 
 -- * implementation
