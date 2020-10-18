@@ -49,8 +49,10 @@ import qualified Data.Char as Char
 import qualified Data.Either as Either
 import qualified Data.List as List
 import qualified Data.Map as Map
+import           Data.Map (Map)
 import qualified Data.Maybe as Maybe
 import qualified Data.Set as Set
+import           Data.Set (Set)
 import qualified Data.Text as Text
 import           Data.Text (Text)
 import qualified Data.Time.Clock as Clock
@@ -79,8 +81,8 @@ searchDepth = 12
 data Result = Result {
     resultRange :: (Row, Row)
     , resultImports :: String
-    , resultAdded :: Set.Set Types.ModuleName
-    , resultRemoved :: Set.Set Types.ModuleName
+    , resultAdded :: Set Types.ModuleName
+    , resultRemoved :: Set Types.ModuleName
     , resultMetrics :: [Metric]
     } deriving (Show)
 
@@ -250,29 +252,19 @@ locateImport fs (decl, cmts) = do
 -- - If _unqualified non-empty, filter them to the ones in _unqualified.
 -- - Add or modify import lines for them.
 -- - Remove imports that don't appear in modToUnqualifieds.
-fixUnqualified :: Map.Map Types.ModuleName (Set.Set Types.Name)
+fixUnqualified :: Map Types.ModuleName (Set Types.Name)
     -> Config.Config -> [ImportComment]
     -> ([ImportComment], [ImportComment], [Types.ModuleName])
     -- ^ (modified, new, removed)
 fixUnqualified modToUnqualifieds config imports =
-    -- Add new references.
-    -- Then filter out managed symbols which are no longer present.
-    -- Then delete empty imports which are now empty.
-    removeEmptyImports $ first (map stripReferences) $
-        foldr addReferences (imports, []) $ Map.toList modToUnqualifieds
+    removeEmptyImports moduleToNames $
+        first (map (first stripReferences)) $
+        foldr addReferences (imports, []) $
+        Map.toList modToUnqualifieds
     where
-    removeEmptyImports (modified, new) =
-        (kept, new, map (Types._importName . fst) removed)
-        where
-        (kept, removed) = List.partition (not . emptyImport . fst) modified
-    emptyImport imp = Map.member (Types._importName imp) moduleToNames
-        -- Can delete if it has an import list, but it's empty.
-        && Types.importEmpty imp
-
-    stripReferences (imp, cmts) =
-        ( Types.importModify (filter keep) imp
-        , cmts
-        )
+    -- Remove managed unqualified imports that are no longer referenced.
+    stripReferences :: Types.Import -> Types.Import
+    stripReferences imp = Types.importModify (filter keep) imp
         where
         moduleName = Types._importName imp
         -- Keep if it's not managed, or it is managed and referenced.
@@ -281,6 +273,12 @@ fixUnqualified modToUnqualifieds config imports =
             || maybe False (var `Set.member`)
                 (Map.lookup moduleName modToUnqualifieds)
         keep _ = True
+    -- Successively modify the ImportComment list for each new reference.  Keep
+    -- existing modified imports separate from newly added ones, so they can be
+    -- reported as adds.
+    addReferences :: (Types.ModuleName, Set Types.Name)
+        -> ([ImportComment], [ImportComment])
+        -> ([ImportComment], [ImportComment])
     addReferences (moduleName, names) (existing, new) =
         case Util.modifyAt (matches moduleName . fst) add existing of
             Nothing -> (existing, (newImport, []) : new)
@@ -295,15 +293,27 @@ fixUnqualified modToUnqualifieds config imports =
 
     isManaged moduleName name = maybe False (name `elem`) $
         Map.lookup moduleName moduleToNames
-    moduleToNames :: Map.Map Types.ModuleName [Types.Name]
+    moduleToNames :: Map Types.ModuleName [Types.Name]
     moduleToNames = Util.multimap . map Tuple.swap . Map.toList
         . Config._unqualified $ config
     mkEntity var = Types.Entity Nothing var Nothing
 
+-- | Remove unqualified imports that have been made empty.
+removeEmptyImports :: Map Types.ModuleName names -> ([ImportComment], new)
+    -> ([ImportComment], new, [Types.ModuleName])
+removeEmptyImports moduleToNames (modified, new) =
+    (kept, new, map (Types._importName . fst) removed)
+    where
+    (kept, removed) = List.partition (not . emptyImport . fst) modified
+    emptyImport imp = Map.member (Types._importName imp) moduleToNames
+        -- Can delete if it has an import list, but it's empty.
+        && Types.importEmpty imp
+
+
 -- | Make a map from each module with unqualified imports to its unqualified
 -- imports that occur in the module.
 makeModToUnqualifieds :: Config.Config -> Parse.Module
-    -> Map.Map Types.ModuleName (Set.Set Types.Name)
+    -> Map Types.ModuleName (Set Types.Name)
 makeModToUnqualifieds config mod
     | unqual == mempty = mempty
     | otherwise = Util.setmap $
@@ -436,12 +446,12 @@ isPackageModule index (Types.ModuleName name) =
 -- | All the relevant info extracted from a module.
 data Extracted = Extracted {
     -- | References exist, but no corresponding imports.
-    _missingImports :: Set.Set Types.Qualification
+    _missingImports :: Set Types.Qualification
     -- | Imports exist but no reference.
-    , _unusedImports :: Set.Set Types.ModuleName
+    , _unusedImports :: Set Types.ModuleName
     , _unchangedImports :: [ImportComment]
     , _importRange :: (Int, Int)
-    , _modToUnqualifieds :: Map.Map Types.ModuleName (Set.Set Types.Name)
+    , _modToUnqualifieds :: Map Types.ModuleName (Set Types.Name)
     }
 
 instance DeepSeq.NFData Extracted where
