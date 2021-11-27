@@ -36,14 +36,16 @@
 -}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DisambiguateRecordFields #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TupleSections #-}
 module FixImports.FixImports where
-import Prelude hiding (mod)
-import qualified Control.Monad.State.Strict as State
+import           Prelude hiding (mod)
 import qualified Control.DeepSeq as DeepSeq
+import qualified Control.Monad.State.Strict as State
 import           Control.Monad.Trans (lift)
+
 import           Data.Bifunctor (first, second)
 import qualified Data.Char as Char
 import qualified Data.Either as Either
@@ -58,12 +60,13 @@ import qualified Data.Text.IO as Text.IO
 import           Data.Text (Text)
 import qualified Data.Time.Clock as Clock
 import qualified Data.Tuple as Tuple
+
+import qualified EL.Debug as Debug
+import qualified Language.Preprocessor.Cpphs as Cpphs
 import qualified Numeric
 import qualified System.Directory as Directory
 import qualified System.FilePath as FilePath
 import           System.FilePath ((</>))
-
-import qualified Language.Preprocessor.Cpphs as Cpphs
 
 import qualified FixImports.Config as Config
 import qualified FixImports.Format as Format
@@ -101,7 +104,7 @@ fixModule config modulePath source = do
     mStart <- metric () "start"
     processedSource <- cppModule modulePath source
     mCpp <- metric () "cpp"
-    result <- parse (Config._language config) modulePath processedSource
+    result <- Parse.parse (Config._language config) modulePath processedSource
     case result of
         Left err -> return (Left err, [])
         Right (mod, cmts) -> do
@@ -121,10 +124,6 @@ fixModule config modulePath source = do
                         <> unlines cpps
                     , []
                     )
-
-parse :: [Types.Extension] -> FilePath -> String
-    -> IO (Either String (Parse.Module, [Parse.Comment]))
-parse extensions modulePath = Parse.parse extensions modulePath
 
 -- | The parse function takes a CPP extension, but doesn't actually pay any
 -- attention to it, so I have to run CPP myself.  The imports are fixed
@@ -205,7 +204,7 @@ fixImports fs config index modulePath extracted = do
     mNewImports <- lift $ _metric fs mbNew "find-new-imports"
     (imports, newUnqualImports, unusedUnqual) <- return $
         fixUnqualified (_modToUnqualifieds extracted) config
-            (_unchangedImports extracted)
+            (_parsedImports extracted)
     newUnqualImports <- lift $ mapM (locateImport fs) newUnqualImports
     mUnqual <- lift $ _metric fs newUnqualImports "unqualified-imports"
     mbExisting <- mapM (findImport fs index (Config._includes config)) imports
@@ -248,33 +247,49 @@ locateImport fs (decl, cmts) = do
         , importSource = if isLocal then Types.Local else Types.Package
         }
 
+-- type ModToUnqualifieds =
+--     Map Types.ModuleName (Set (Maybe Types.Name, Types.Name))
+
 -- | Add unqualified imports.
 --
 -- - Get unqualifieds.
 -- - If _unqualified non-empty, filter them to the ones in _unqualified.
 -- - Add or modify import lines for them.
 -- - Remove imports that don't appear in modToUnqualifieds.
-fixUnqualified :: Map Types.ModuleName (Set Types.Name)
-    -> Config.Config -> [ImportComment]
+--
+-- TODO
+-- if the names are under a constructor, have to merge them together
+-- and create the import line
+-- also have to extract constructor imports from alreadyImported
+-- Maybe.mapMaybe (\name -> (, name) . fst <$> Map.lookup name unqual) $
+-- Set.toList $ Parse.unqualifieds mod
+fixUnqualified :: ModToUnqualifieds -> Config.Config -> [ImportComment]
     -> ([ImportComment], [ImportComment], [Types.ModuleName])
     -- ^ (modified, new, removed)
 fixUnqualified modToUnqualifieds config imports =
     removeEmptyImports moduleToNames $
         first (map (first stripReferences)) $
+        -- Debug.trace "addReferences" $
         foldr addReferences (imports, []) $
+        -- map (second (Set.map snd)) $ -- TODO
         filter (not . Set.null . snd) $
+        Debug.trace "alreadyImported" $
         map (second (Set.filter (not . alreadyImported))) $
+        Debug.trace "modToUnqualifieds" $
         Map.toList modToUnqualifieds
     where
     -- Ignore unqualified references that are already imported, perhaps from
     -- some other module.
-    alreadyImported :: Types.Name -> Bool
-    alreadyImported name = any ((name `elem`) . importedEntities . fst) imports
+    alreadyImported :: (Maybe Types.Name, Types.Name) -> Bool
+    alreadyImported (typ, name) = Debug.trace_ret "alreadyImported" (typ, name) $
+        any (((typ, name) `elem`) . importedEntities . fst) imports
+    -- alreadyImported :: Types.Name -> Bool
+    -- alreadyImported name = any ((name `elem`) . importedEntities . fst) imports
 
     -- Successively modify the ImportComment list for each new reference.  Keep
     -- existing modified imports separate from newly added ones, so they can be
     -- reported as adds.
-    addReferences :: (Types.ModuleName, Set Types.Name)
+    addReferences :: (Types.ModuleName, Set (Maybe Types.Name, Types.Name))
         -> ([ImportComment], [ImportComment])
         -> ([ImportComment], [ImportComment])
     addReferences (moduleName, names) (existing, new) =
@@ -282,7 +297,7 @@ fixUnqualified modToUnqualifieds config imports =
             Nothing -> (existing, (newImport, []) : new)
             Just modified -> (modified, new)
         where
-        add = first $ Types.importModify (newEntities ++)
+        add = first $ Types.modifyImport (newEntities ++)
         newImport = (Types.makeImport moduleName)
             { Types._importEntities = Just $ map Right newEntities }
         newEntities = map mkEntity $ Set.toList names
@@ -291,25 +306,56 @@ fixUnqualified modToUnqualifieds config imports =
 
     -- Remove managed unqualified imports that are no longer referenced.
     stripReferences :: Types.Import -> Types.Import
-    stripReferences imp = Types.importModify (filter keep) imp
+    stripReferences imp = Types.modifyImport (Maybe.mapMaybe keep) imp
         where
         moduleName = Types._importName imp
-        -- Keep if it's not managed, or it is managed and referenced.
-        keep (Types.Entity Nothing var Nothing) =
-            not (isManaged moduleName var)
-            || maybe False (var `Set.member`)
-                (Map.lookup moduleName modToUnqualifieds)
-        keep _ = True
-    isManaged moduleName name = maybe False (name `elem`) $
-        Map.lookup moduleName moduleToNames
-    moduleToNames :: Map Types.ModuleName [Types.Name]
-    moduleToNames = Util.multimap . map Tuple.swap . Map.toList
-        . Config._unqualified $ config
-    mkEntity var = Types.Entity Nothing var Nothing
+        keep ent@(Types.Entity Nothing var Nothing)
+            | keepVar Nothing var = Just ent
+            | otherwise = Nothing
+        -- It has imported constructors, so filter on them.
+        keep (Types.Entity Nothing typ (Just (Types.ImportConstructors vars)))
+            | null kept = Nothing
+            | otherwise = Just $
+                Types.Entity Nothing typ (Just (Types.ImportConstructors kept))
+            where
+            kept = filter (keepVar (Just typ)) vars
 
-importedEntities :: Types.Import -> [Types.Name]
-importedEntities = map Types._entityVar . Either.rights . Maybe.fromMaybe []
+        keep ent = Just ent
+        keepVar typ var = not (isManaged moduleName var)
+            || maybe False ((typ, var) `Set.member`)
+                (Map.lookup moduleName modToUnqualifieds)
+
+    isManaged moduleName name = maybe False (name `Set.member`) $
+        Map.lookup moduleName moduleToNames
+    -- This is a set of all names from each module, so I can toss the
+    -- constructor types.
+    moduleToNames :: Map Types.ModuleName (Set Types.Name)
+    moduleToNames = Util.setmap . map (Tuple.swap . fmap fst) . Map.toList
+        . Config._unqualified $ config
+    mkEntity (Nothing, var) = Types.Entity Nothing var Nothing
+    mkEntity (Just typ, var) =
+        Types.Entity Nothing typ (Just (Types.ImportConstructors [var]))
+
+importedEntities :: Types.Import -> [(Maybe Types.Name, Types.Name)]
+importedEntities = concatMap entityImports . Either.rights . Maybe.fromMaybe []
     . Types._importEntities
+
+entityImports :: Types.Entity -> [(Maybe Types.Name, Types.Name)]
+entityImports = \case
+    Types.Entity _ var Nothing -> [(Nothing, var)]
+    Types.Entity _ typ (Just (Types.ImportConstructors vars)) ->
+        map (Just typ,) vars
+    _ -> []
+
+-- importedEntities :: Types.Import -> [Types.Name]
+-- importedEntities = concatMap entityImports . Either.rights . Maybe.fromMaybe []
+--     . Types._importEntities
+
+-- entityImports :: Types.Entity -> [Types.Name]
+-- entityImports = \case
+--     Types.Entity _ var Nothing -> [var]
+--     Types.Entity _ _typ (Just (Types.ImportConstructors vars)) -> vars
+--     _ -> []
 
 -- | Remove unqualified imports that have been made empty.
 removeEmptyImports :: Map Types.ModuleName names -> ([ImportComment], new)
@@ -325,14 +371,17 @@ removeEmptyImports moduleToNames (modified, new) =
 
 -- | Make a map from each module with unqualified imports to its unqualified
 -- imports that occur in the module.
-makeModToUnqualifieds :: Config.Config -> Parse.Module
-    -> Map Types.ModuleName (Set Types.Name)
-makeModToUnqualifieds config mod
-    | unqual == mempty = mempty
-    | otherwise = Util.setmap $
-        Maybe.mapMaybe (\name -> (, name) <$> Map.lookup name unqual) $
-        Set.toList $ Parse.unqualifieds mod
-    where unqual = Config._unqualified config
+makeModToUnqualifieds :: Map.Map Types.Name (Types.ModuleName, Maybe Types.Name)
+    -> Parse.Module -> ModToUnqualifieds
+makeModToUnqualifieds unqualified mod
+    | unqualified == mempty = mempty
+    | otherwise = Util.setmap $ Maybe.mapMaybe getModule $ Set.toList $
+        Debug.trace "mod unqualifieds" $
+        Parse.unqualifieds mod
+    where
+    getModule name = case Map.lookup name unqualified of
+        Nothing -> Nothing
+        Just (mod, mbType) -> Just (mod, (mbType, name))
 
 -- | Clip out the range from the given text and replace it with the given
 -- lines.
@@ -462,10 +511,18 @@ data Extracted = Extracted {
     _missingImports :: Set Types.Qualification
     -- | Imports exist but no reference.
     , _unusedImports :: Set Types.ModuleName
-    , _unchangedImports :: [ImportComment]
+    -- | Existing imports parsed out of the module source.
+    , _parsedImports :: [ImportComment]
+    -- | Line range of the import block.
     , _importRange :: (Int, Int)
-    , _modToUnqualifieds :: Map Types.ModuleName (Set Types.Name)
-    }
+    , _modToUnqualifieds :: ModToUnqualifieds
+    } deriving (Show)
+
+-- | For each detected unqualified use in the module, map the module it should
+-- come from to the set of things that should be imported from it.  If it's a
+-- constructor, it will be (Just "Type", "Constructor").
+type ModToUnqualifieds =
+    Map Types.ModuleName (Set (Maybe Types.Name, Types.Name))
 
 instance DeepSeq.NFData Extracted where
     rnf (Extracted a b c d e) = DeepSeq.rnf (a, b, c, d, e)
@@ -474,9 +531,10 @@ extract :: Config.Config -> Parse.Module -> [Parse.Comment] -> Extracted
 extract config mod cmts = Extracted
     { _missingImports = missing
     , _unusedImports = unused
-    , _unchangedImports = importCmts
+    , _parsedImports = importCmts
     , _importRange = range
-    , _modToUnqualifieds = makeModToUnqualifieds config mod
+    , _modToUnqualifieds =
+        makeModToUnqualifieds (Config._unqualified config) mod
     }
     where
     unused = Set.difference (Set.fromList modules)

@@ -4,11 +4,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE NamedFieldPuns #-}
-
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
-
--- {-# LANGUAGE NoMonomorphismRestriction #-}
 module FixImports.Parse (
     -- * types
     Module
@@ -203,6 +200,44 @@ extractImport locDecl = Types.Import
     }
     where decl = SrcLoc.unLoc locDecl
 
+extractEntity :: Hs.IE Hs.GhcPs -> Either Types.Error Types.Entity
+extractEntity = fmap entity . \case
+    -- var
+    Hs.IEVar _ var -> Right (unvar var, Nothing)
+    -- Constructor
+    Hs.IEThingAbs _ var -> Right (unvar var, Nothing)
+    -- Constructor(..)
+    Hs.IEThingAll _ var -> Right (unvar var, Just Types.ImportAll)
+    -- Constructor(x, y)
+    -- What is _wildcard?
+    -- I think _labels is for records, but I don't think it's populated at the
+    -- GhcPs stage, since how would it know?
+    Hs.IEThingWith _ var _wildcard things _labels -> Right
+        ( unvar var
+        -- These are T(C1, C2) imported constructors, they can't have
+        -- qualifiers, right?
+        , Just $ Types.ImportConstructors $ map (snd . unvar) things
+        )
+    -- Shouldn't happen, export only.
+    Hs.IEModuleContents {} -> Left "IEModuleContents"
+    Hs.IEGroup {} -> Left "IEGroup"
+    Hs.IEDoc {} -> Left "IEDoc"
+    Hs.IEDocNamed {} -> Left "IEDocNamed"
+    Hs.XIE {} -> Left "XIE"
+    where
+    entity ((qual, var), list) = Types.Entity
+        { _entityQualifier = qual
+        , _entityVar = var
+        , _entityList = list
+        }
+    unvar var = case SrcLoc.unLoc var of
+        Hs.IEName n -> (Nothing, toName n)
+        Hs.IEPattern n -> (Just "pattern", toName n)
+        Hs.IEType n -> (Just "type", toName n)
+    -- varStr (Just qual, name) = qual <> " " <> Types.showName name
+    -- varStr (Nothing, name) = Types.showName name
+    toName = inferName . unRdrName . SrcLoc.unLoc
+
 extractSrcSpan :: SrcLoc.SrcSpan -> Types.SrcSpan
 extractSrcSpan (SrcLoc.RealSrcSpan span) = Types.SrcSpan
     -- GHC SrcSpan has 1-based lines, I use 0-based ones.
@@ -214,39 +249,6 @@ extractSrcSpan (SrcLoc.RealSrcSpan span) = Types.SrcSpan
 extractSrcSpan (SrcLoc.UnhelpfulSpan fstr) =
     error $ "UnhelpfulSpan: " <> show fstr
     -- I think GHC uses these internally, in phases after Hs.GhcPs.
-
-extractEntity :: Hs.IE Hs.GhcPs -> Either Types.Error Types.Entity
-extractEntity = fmap entity . \case
-    -- var
-    Hs.IEVar _ var -> Right (unvar var, Nothing)
-    -- Constructor
-    Hs.IEThingAbs _ var -> Right (unvar var, Nothing)
-    -- Constructor(..)
-    Hs.IEThingAll _ var -> Right (unvar var, Just "(..)")
-    -- Constructor(x, y)
-    -- What is _wildcard?
-    -- I think _labels is for records, but I don't think it's populated at the
-    -- GhcPs stage, since how would it know?
-    Hs.IEThingWith _ var _wildcard things _labels -> Right
-        ( unvar var
-        , Just $ "(" <> List.intercalate ", " (map (varStr . unvar) things)
-            <> ")"
-        )
-    -- Shouldn't happen, export only.
-    Hs.IEModuleContents {} -> Left "IEModuleContents"
-    Hs.IEGroup {} -> Left "IEGroup"
-    Hs.IEDoc {} -> Left "IEDoc"
-    Hs.IEDocNamed {} -> Left "IEDocNamed"
-    Hs.XIE {} -> Left "XIE"
-    where
-    entity ((qual, var), list) = Types.Entity qual var list
-    unvar var = case SrcLoc.unLoc var of
-        Hs.IEName n -> (Nothing, toName n)
-        Hs.IEPattern n -> (Just "pattern", toName n)
-        Hs.IEType n -> (Just "type", toName n)
-    varStr (Just qual, name) = qual <> " " <> Types.showName name
-    varStr (Nothing, name) = Types.showName name
-    toName = inferName . unRdrName . SrcLoc.unLoc
 
 inferName :: String -> Types.Name
 inferName var

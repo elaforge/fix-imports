@@ -7,6 +7,7 @@ import qualified Data.Text as Text
 import qualified FixImports.Config as Config
 import qualified FixImports.FixImports as FixImports
 import qualified FixImports.Types as Types
+import           FixImports.Types (Name(Name, Operator))
 
 import           EL.Test.Global
 
@@ -26,19 +27,30 @@ test_parse = do
             }
 
 test_parseUnqualified = do
-    let f = Config._unqualified . parseConfig
-    equal (f ["unqualified: A.B (c); D.E ((+))"]) $ Map.fromList
-        [ (Types.Name "c", "A.B")
-        , (Types.Operator "+", "D.E")
+    let f = Config.parseUnqualified
+    equal (f "A.B (c, d)")
+        [Right [(Name "c", ("A.B", Nothing)), (Name "d", ("A.B", Nothing))]]
+    equal (f "A.B (c); C.D (e)")
+        [ Right [(Name "c", ("A.B", Nothing))]
+        , Right [(Name "e", ("C.D", Nothing))]
         ]
-    equal (f ["unqualified: A.B(c, d)"]) $ Map.fromList
-        [ (Types.Name "c", "A.B")
-        , (Types.Name "d", "A.B")
+    equal (f "A.B ((:|))")
+        [Right [(Operator ":|", ("A.B", Nothing))]]
+    equal (f "A.B (C(D))")
+        [Right [(Name "D", ("A.B", Just (Name "C")))]]
+    equal (f "A.B (C(D, (:|)))")
+        [ Right
+            [ (Name "D", ("A.B", Just (Name "C")))
+            , (Operator ":|", ("A.B", Just (Name "C")))
+            ]
         ]
-    equal (f ["unqualified: A.B (c,(+))"]) $ Map.fromList
-        [ (Types.Name "c", "A.B")
-        , (Types.Operator "+", "A.B")
+    equal (f "A.B ((:*:)(D, (:|)))")
+        [ Right
+            [ (Name "D", ("A.B", Just (Operator ":*:")))
+            , (Operator ":|", ("A.B", Just (Operator ":*:")))
+            ]
         ]
+    leftLike (head (f "A*(c)")) "doesn't look like a module name"
 
 test_parseQualifyAs = do
     let f = Config._qualifyAs . parseConfig

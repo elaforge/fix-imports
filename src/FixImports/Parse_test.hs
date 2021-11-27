@@ -1,13 +1,11 @@
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE OverloadedStrings #-}
 module FixImports.Parse_test where
-import qualified Data.Maybe as Maybe
+import qualified Data.List as List
 import           Data.Maybe (fromMaybe)
 import qualified Data.Set as Set
-import qualified System.IO.Unsafe as Unsafe
 
-import qualified GHC.Hs as Hs
-import qualified SrcLoc
+import qualified System.IO.Unsafe as Unsafe
 
 import qualified FixImports.Parse as Parse
 import qualified FixImports.Types as Types
@@ -85,10 +83,6 @@ test_comments = do
 
 test_extractEntity = do
     let f = fmap extractEntities . parse
-        extractEntities = map (fmap extractEntity) . fromMaybe []
-            . Types._importEntities . head . Parse.extractImports
-        extractEntity (Types.Entity qual name list) =
-            (fromMaybe "" qual, name, fromMaybe "" list)
     let n = Types.Name
     rightEqual (f "import X") []
     rightEqual (f "import X (a, b)")
@@ -102,12 +96,19 @@ test_extractEntity = do
     rightEqual (f "import X (A(B))") [Right ("", n "A", "(B)")]
     rightEqual (f "import X ((*))") [Right ("", Types.Operator "*", "")]
 
-
+extractEntities :: Parse.Module
+    -> [Either Types.Error (String, Types.Name, String)]
 extractEntities = map (fmap extractEntity) . fromMaybe []
     . Types._importEntities . head . Parse.extractImports
     where
     extractEntity (Types.Entity qual name list) =
-        (fromMaybe "" qual, name, fromMaybe "" list)
+        ( fromMaybe "" qual
+        , name
+        , maybe "" showEList list
+        )
+    showEList Types.ImportAll = "(..)"
+    showEList (Types.ImportConstructors cs) =
+        "(" <> List.intercalate ", " (map Types.showName cs) <> ")"
 
 test_qualifications = do
     let f = fmap (Set.toList . Parse.qualifications) . parse
@@ -128,6 +129,9 @@ test_unqualifiedValues = do
     rightEqual (f "f x = 10") []
     rightEqual (f "f x = y") ["y"]
     rightEqual (f "x = y") ["y"]
+    -- -- LHS assignment will suppress it as a unqualified reference.
+    -- -- TODO not implemented yet
+    -- rightEqual (f "x = 10\ny = x") []
     -- TODO I'd rather just "pat", but I'd need to dig deeper into
     -- the pattern AST which is complicated.
     rightEqual (f "f | x <- pat = 10") ["pat", "x"]

@@ -1,7 +1,9 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE LambdaCase #-}
 module FixImports.Format (
     formatGroups
     , showImport
+    , prettyEntityList
 ) where
 import qualified Data.List as List
 import qualified Data.Maybe as Maybe
@@ -127,7 +129,13 @@ prettyEntities = parenList . map pp
     pp (Left err) = "{{parse error: " <> PP.text err <> "}}"
     pp (Right (Types.Entity qualifier var list)) =
         (maybe mempty PP.text qualifier <+> PP.text (Types.showName var))
-        <> maybe mempty PP.text list
+        <> maybe mempty prettyEntityList list
+
+prettyEntityList :: Types.EntityList -> PP.Doc
+prettyEntityList = \case
+    Types.ImportAll -> "(..)"
+    Types.ImportConstructors vars ->
+        parenList $ map (PP.text . Types.showName) vars
 
 parenList :: [PP.Doc] -> PP.Doc
 parenList = PP.parens . PP.fsep . PP.punctuate PP.comma

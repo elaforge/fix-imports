@@ -100,6 +100,8 @@ test-suite test
         , uniplate
 
         , test-karya
+
+        , el-debug
     other-modules:
         FixImports.Config
         FixImports.Config_test

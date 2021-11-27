@@ -2,11 +2,12 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PartialTypeSignatures #-} -- sort keys only care about Ord
+{-# LANGUAGE TupleSections #-}
 {-# OPTIONS_GHC -Wno-partial-type-signatures #-}
 -- | Parse the config file.
 module FixImports.Config where
 import           Control.Monad (foldM, unless)
-import           Data.Bifunctor (second)
+import           Data.Bifunctor (first, second)
 import qualified Data.Char as Char
 import qualified Data.Either as Either
 import qualified Data.List as List
@@ -14,10 +15,10 @@ import qualified Data.Map as Map
 import qualified Data.Text as Text
 import           Data.Text (Text)
 import qualified Data.Text.IO as Text.IO
-import qualified Data.Tuple as Tuple
 
 import qualified System.FilePath as FilePath
 import qualified System.IO as IO
+import qualified Text.ParserCombinators.ReadP as ReadP
 import qualified Text.Read as Read
 
 import qualified FixImports.Index as Index
@@ -35,8 +36,9 @@ data Config = Config {
     , _order :: Order
     -- | Heuristics to pick the right module.  Used by 'pickModule'.
     , _modulePriority :: Priorities
-    -- | Map unqualified names to the module to import for them.
-    , _unqualified :: Map.Map Types.Name Types.ModuleName
+    -- | Map unqualified names to the module to import for them, and possible a
+    -- constructor they should be imported from.
+    , _unqualified :: Map.Map Types.Name (Types.ModuleName, Maybe Types.Name)
     -- | Map abbreviation to the complete qualification:
     -- > import-as: Data.Text.Lazy as DTL -> [("DTL", "Data.Text.Lazy")]
     , _qualifyAs :: Map.Map Types.Qualification Types.Qualification
@@ -154,11 +156,12 @@ parse text = (config, errors)
                 , low = getModules "prio-module-low"
                 }
             }
-        , _unqualified = Map.fromList $ map Tuple.swap unqualified
+        , _unqualified = Map.fromList unqualified
         , _format = format
         , _qualifyAs = qualifyAs
         }
-    (unknownUnqualified, unqualified) = Either.partitionEithers $
+    (unknownUnqualified, unqualified) =
+        second concat $ Either.partitionEithers $
         parseUnqualified (Text.unwords (get "unqualified"))
     (unknownLanguage, language) = parseLanguage (get "language")
     (unknownQualifyAs, qualifyAs) =
@@ -188,7 +191,9 @@ parse text = (config, errors)
     getStrings = map Text.unpack . get
     getBool k = k `Map.member` fields
 
-parseFormat :: [Text] -> Either Text Format
+type Error = Text
+
+parseFormat :: [Text] -> Either Error Format
 parseFormat = foldM set defaultFormat
     where
     set fmt "leave-space-for-qualified" = Right $
@@ -200,41 +205,158 @@ parseFormat = foldM set defaultFormat
             Just cols -> Right $ fmt { _columns = cols }
     set _ w = Left $ "unrecognized word: " <> showt w
 
+parseUnqualified :: Text
+    -> [Either Error [(Types.Name, (Types.ModuleName, Maybe Types.Name))]]
+parseUnqualified src
+    | Text.null (Text.strip src) = []
+    | otherwise = map (parse . Text.strip) (Text.splitOn ";" src)
+    where
+    parse src = check src (parseUnqualifiedImport (Text.unpack src))
+    check src Nothing = Left $ "can't parse: " <> showt src
+    check src (Just (mod, names)) = do
+        checkModule src mod
+        concat <$> mapM (checkName mod) names
+    checkName mod (name, Nothing) = Right [(name, (mod, Nothing))]
+    checkName mod (typ, Just constructors) =
+        Right [(name, (mod, Just typ)) | name <- constructors]
+    -- I could check Name and Operator, but let's not bother.
+    checkModule src (Types.ModuleName n)
+        | all (\c -> Char.isLetter c || c `elem` ("._" :: [Char])) n = Right ()
+        | otherwise = Left $ showt src
+            <> ": doesn't look like a module name: " <> showt n
+
+parseUnqualifiedImport :: String
+    -> Maybe (Types.ModuleName, [(Types.Name, Maybe [Types.Name])])
+parseUnqualifiedImport = parseP $ (,)
+    <$> lexeme pModule
+    <*> lexeme (parens (ReadP.sepBy1 pImport (char ',')))
+    where
+    pModule = Types.ModuleName <$> idChars
+    pImport = (,)
+        <$> pName <*> optional (parens (ReadP.sepBy1 pName (char ',')))
+    pName = (Types.Name <$> idChars)
+        ReadP.+++ (Types.Operator <$> parens idChars)
+
+    parens = ReadP.between (char '(') (char ')')
+    lexeme = (<* ReadP.munch Char.isSpace)
+    chars = ReadP.many1 . ReadP.satisfy
+    char = lexeme . ReadP.char
+    optional = ReadP.option Nothing . fmap Just
+    idChars = chars (`notElem` (" ();," :: [Char]))
+
+parseP :: ReadP.ReadP a -> String -> Maybe a
+parseP p = Util.head . map fst . filter (null . snd) . ReadP.readP_to_S p
+
+-- t0 = parseUnqualified2 "A.B (c, d)";
+-- t1 = parseUnqualified2 "A.B (c); C.D (e)"
+--
+-- -- |
+-- -- "A.B (c); Q (r)" -> [Right ("A.B", "c"), Right ("Q", "r")]
+-- -- "A.B (C(X1, X2), D(Y1, Y2))"
+-- -- "A.B (C(D)); A.B (C((:|)))
+-- parseUnqualified2 :: String
+--     -> Either Error [(Types.ModuleName, [(Types.Name, Maybe [Types.Name])])]
+-- parseUnqualified2 = maybe (Left "") Right . parseP pModImports
+--     where
+--     pModImports = ReadP.sepBy pModImport (char ';')
+--     pModImport = (,)
+--         <$> lexeme pModule
+--         <*> lexeme (parens (ReadP.sepBy1 pImport (char ',')))
+--     pModule = Types.ModuleName <$> idChars
+--     pImport = (,)
+--         <$> pName <*> optional (parens (ReadP.sepBy1 pName (char ',')))
+--     pName = (Types.Name <$> idChars)
+--         ReadP.+++ (Types.Operator <$> parens idChars)
+--
+--     parens = ReadP.between (char '(') (char ')')
+--     lexeme = (<* ReadP.munch Char.isSpace)
+--     chars = ReadP.many1 . ReadP.satisfy
+--     char = lexeme . ReadP.char
+--     optional = ReadP.option Nothing . fmap Just
+--     idChars = chars (`notElem` (" ();," :: [Char]))
+
+{-
+
+-- TODO: this has started to re-invent parser combinators
+-- in fact I need them because I can't just splitOn "," when there are nested
+-- lists.
 -- |
--- "A.B(c); Q(r)" -> [Right ("A.B", "c"), Right ("Q", "r")]
-parseUnqualified :: Text -> [Either Text (Types.ModuleName, Types.Name)]
+-- "A.B (c); Q (r)" -> [Right ("A.B", "c"), Right ("Q", "r")]
+-- "A.B (C(X1, X2), D(Y1, Y2))"
+-- "A.B (C(D)); A.B (C((:|)))
+parseUnqualified :: Text
+    -> [Either Error (Types.Name, (Types.ModuleName, Maybe Types.Name))]
 parseUnqualified = concatMap (parse . Text.break (=='('))  . Text.splitOn ";"
     where
     parse (pre, post)
         | Text.null pre && Text.null post = []
         | Text.null pre = [Left $ "no module name before " <> showt post]
         | Text.null post = [Left $ "no import after " <> showt pre]
-        | Just imports <- hasParens post =
-            map (parseUnqualifiedImport (Text.strip pre))
-                (map Text.strip (Text.splitOn "," imports))
+        | Just imports <- hasParens post = case parseModule (Text.strip pre) of
+            Left err -> [Left err]
+            Right module_ -> concatMap (add module_) $
+                map (parseUnqualifiedImport . Text.strip)
+                    (Text.splitOn "," imports)
         | otherwise = [Left $ "expected parens: " <> showt post]
+        where
+        add _ (Left err) = [Left err]
+        add module_ (Right (c, [])) = [Right (c, (module_, Nothing))]
+        add module_ (Right (typ, constructors)) =
+            [Right (c, (module_, Just typ)) | c <- constructors]
+        -- where add module_ (typ, constructors) = undefined
+
+    parseModule word
+        | Text.all isModuleChar word =
+            return $ Types.ModuleName (Text.unpack word)
+        | otherwise =
+            Left $ "this doesn't look like a module name: " <> showt word
+    isModuleChar c = Char.isLetter c || Char.isDigit c || c == '.'
 
 -- |
--- "A.B" "(c)" -> (Types.Name "c", "A.B")
--- "A.B" "((+))" -> (Types.Operator "+", "A.B")
-parseUnqualifiedImport :: Text -> Text
-    -> Either Text (Types.ModuleName, Types.Name)
-parseUnqualifiedImport pre post = do
-    unless (Text.all isModuleChar pre) $
-        Left $ "this doesn't look like a module name: " <> showt pre
-    let module_ = Types.ModuleName (Text.unpack pre)
-    case hasParens post of
-        Just op
-            | Text.all Util.haskellOpChar op ->
-                Right (module_, Types.Operator (Text.unpack op))
-            | otherwise -> Left $ "non-symbols in operator: " <> showt post
-        Nothing
-            | Text.all (not . Util.haskellOpChar) post ->
-                Right (module_, Types.Name (Text.unpack post))
-            | otherwise ->
-                Left $ "symbol char in id, use parens: " <> showt post
+-- "c" -> (Types.Name "c", [])
+-- "(+)" -> (Types.Operator "+", [])
+-- "A(B) -> (Types.Name "A", ["B"])
+parseUnqualifiedImport :: Text -> Either Error (Types.Name, [Types.Name])
+parseUnqualifiedImport elt = case parseConstructors elt of
+    Just result -> result
+    Nothing -> (, []) <$> parseName elt
+    -- Just result -> do
+    --     (typ, constructors) <- result
+    --     return (typ, Just
+    -- Nothing -> do
+    --     name <- parseName post
+    --     return name
+
+parseName :: Text -> Either Error Types.Name
+parseName word = case hasParens word of
+    Just op
+        | Text.all Util.haskellOpChar op ->
+            Right $ Types.Operator (Text.unpack op)
+        | otherwise -> Left $ "non-symbols in operator: " <> showt word
+    Nothing
+        | Text.all (not . Util.haskellOpChar) word ->
+            Right $ Types.Name (Text.unpack word)
+        | otherwise ->
+            Left $ "symbol char in id, use parens: " <> showt word
+
+parseConstructors :: Text -> Maybe (Either Error (Types.Name, [Types.Name]))
+parseConstructors word = parse <$> breakParens word
     where
-    isModuleChar c = Char.isLetter c || Char.isDigit c || c == '.'
+    parse (typ, names) = (,)
+        <$> parseName typ
+        <*> mapM (parseName . Text.strip) (Text.splitOn "," names)
+
+breakParens :: Text -> Maybe (Text, Text)
+breakParens word
+    | ")" `Text.isSuffixOf` post =
+        Just (pre, Text.dropEnd 1 (Text.drop 1 post))
+    | otherwise = Nothing
+    where
+    (pre, post)
+        | "(" `Text.isPrefixOf` word =
+            first ("("<>) $ Text.break (=='(') (Text.drop 1 word)
+        | otherwise = Text.break (=='(') word
+-}
 
 -- |
 -- "A.B as AB; C as E" -> [("AB", "A.B"), ("E", "C")]

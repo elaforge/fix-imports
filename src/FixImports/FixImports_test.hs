@@ -1,4 +1,5 @@
 {-# LANGUAGE DisambiguateRecordFields #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 module FixImports.FixImports_test where
 import           Control.Monad (unless, void)
@@ -9,6 +10,7 @@ import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
 import qualified Data.Set as Set
+import           Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Time.Clock.POSIX as Clock.POSIX
 import qualified System.IO.Unsafe as Unsafe
@@ -18,6 +20,7 @@ import qualified System.FilePath as FilePath
 import qualified FixImports.Config as Config
 import qualified FixImports.FixImports as FixImports
 import qualified FixImports.Index as Index
+import qualified FixImports.Parse as Parse
 import qualified FixImports.Types as Types
 
 import EL.Test.Global
@@ -188,6 +191,28 @@ test_unqualified = do
     -- Ignore if it's already imported unqualified.
     rightEqual (run "A.B (c)" "import Z (c)\nx = c") ([], [], "import Z (c)\n")
 
+test_unqualified_constructor = do
+    let run config = fmap eResult
+            . fixModule index ["C.hs"] (mkConfig ("unqualified: " <> config))
+                "A.hs"
+        index = Index.makeIndex
+            [ ("pkg", ["A.B"])
+            , ("zpkg", ["Z"])
+            ]
+    -- -- Add, keep, and remove import.
+    -- rightEqual (run "A.B (C(E))" "x = E")
+    --     (["A.B"], [], "import A.B (C(E))\n")
+    -- rightEqual (run "A.B (C(E))" "import A.B (C(E))\nx = E")
+    --     ([], [], "import A.B (C(E))\n")
+    -- rightEqual (run "A.B (C(E))" "import A.B (C(E))\nx = x")
+    --     ([], ["A.B"], "")
+
+    -- Add, keep, and remove multiple.
+    rightEqual (run "A.B (C(E, F))" "x = (E, F)")
+        (["A.B"], [], "import A.B (C(E, F))\n")
+
+    -- rightEqual (run "A.B (C((:|)))" "x = 1 :| [2]")
+    --     (["A.B"], [], "import A.B (C((:|)))\n")
 
 -- * implementation
 
@@ -198,11 +223,21 @@ eResult r =
     , FixImports.resultImports r
     )
 
+t0 = extractMod "unqualified: A.B (C(E))" "import Z (Ty(X), val)\nx = E"
+t1 = FixImports._parsedImports <$> t0
+
+extractMod :: Text -> String -> IO FixImports.Extracted
+extractMod config_ src =
+    Parse.parse (Config._language config) "fname" src >>= \case
+        Left err -> error err
+        Right (mod, cmts) -> return $ FixImports.extract config mod cmts
+    where config = mkConfig config_
+
 fixModule :: Index.Index -> [FilePath]
     -> Config.Config -> FilePath -> String -> Either String FixImports.Result
 fixModule index files config modulePath source =
     case Unsafe.unsafePerformIO $
-            FixImports.parse (Config._language config) modulePath source of
+            Parse.parse (Config._language config) modulePath source of
         Left err -> Left err
         Right (mod, cmts) ->
             fst $ Identity.runIdentity $ flip State.runStateT [] $
@@ -238,7 +273,7 @@ prefixes :: FilePath -> [(FilePath, FilePath)]
 prefixes = map (bimap concat concat) . drop 1
     . (\xs -> zip (List.inits xs) (List.tails xs)) . FilePath.splitPath
 
-mkConfig :: Text.Text -> Config.Config
+mkConfig :: Text -> Config.Config
 mkConfig content
     | null errs = config { Config._includes = ["."] }
     | otherwise = error $ "parsing " <> show content  <> ": "

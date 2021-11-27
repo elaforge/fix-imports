@@ -112,8 +112,8 @@ importEmpty imp = case _importEntities imp of
     _ -> False
 
 -- | If this import has a import list, modify its contents.
-importModify :: ([Entity] -> [Entity]) -> Import -> Import
-importModify modify imp = case (_importHiding imp, _importEntities imp) of
+modifyImport :: ([Entity] -> [Entity]) -> Import -> Import
+modifyImport modify imp = case (_importHiding imp, _importEntities imp) of
     (False, Just errEntities) -> imp
         { _importEntities = Just $ map Left errs
             ++ map Right (normalize (modify entities))
@@ -128,11 +128,18 @@ importModify modify imp = case (_importHiding imp, _importEntities imp) of
 data Entity = Entity {
     _entityQualifier :: !(Maybe String)
     , _entityVar :: !Name
-    , _entityList :: !(Maybe String)
+    , _entityList :: !(Maybe EntityList)
     } deriving (Eq, Ord, Show)
 
 instance DeepSeq.NFData Entity where
     rnf (Entity a b c) = a `deepseq` b `deepseq` c `deepseq` ()
+
+data EntityList = ImportAll | ImportConstructors [Name]
+    deriving (Eq, Ord, Show)
+
+instance DeepSeq.NFData EntityList where
+    rnf (ImportConstructors names) = DeepSeq.rnf names
+    rnf ImportAll = ()
 
 -- | A Qualification is a qualified name minus the actual name.  So it should
 -- be the tail of a ModuleName.
