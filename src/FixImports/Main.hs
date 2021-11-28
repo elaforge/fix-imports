@@ -7,22 +7,26 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module FixImports.Main where
 import qualified Control.Exception as Exception
-import Control.Monad (when)
+import           Control.Monad (when)
+import qualified Data.List as List
+import           Data.Maybe (fromMaybe)
 import qualified Data.Set as Set
 import qualified Data.Text as Text
 import qualified Data.Text.IO as Text.IO
 import qualified Data.Version as Version
 
 import qualified System.Console.GetOpt as GetOpt
+import qualified System.Directory as Directory
 import qualified System.Environment as Environment
 import qualified System.Exit as Exit
 import qualified System.IO as IO
 
 import qualified FixImports.Config as Config
 import qualified FixImports.FixImports as FixImports
-import qualified Paths_fix_imports
 import qualified FixImports.Types as Types
 import qualified FixImports.Util as Util
+
+import qualified Paths_fix_imports
 
 
 main :: IO ()
@@ -31,18 +35,31 @@ main = do
     -- could figure it out from the parsed module name, but a main module may
     -- not have a name.
     (modulePath, flags) <- parseArgs =<< Environment.getArgs
-    let configFile = if null fns then ".fix-imports" else last fns
-            where fns = [fn | Config fn <- flags]
-    (config, errors) <- readConfig configFile
+    (config, errors) <-
+        fromMaybe (Config.empty, []) <$> case [fn | Config fn <- flags] of
+            [] -> findConfig
+            fns -> readConfig (last fns)
     if null errors
         then mainConfig config flags modulePath
         else do
             Text.IO.hPutStrLn IO.stderr $ Text.unlines errors
             Exit.exitFailure
 
-readConfig :: FilePath -> IO (Config.Config, [Text.Text])
-readConfig = fmap (maybe (Config.empty, []) Config.parse)
-    . Util.catchENOENT . Text.IO.readFile
+findConfig :: IO (Maybe (Config.Config, [Text.Text]))
+findConfig = firstJust . map readConfig =<< getConfigLocations
+
+getConfigLocations :: IO [FilePath]
+getConfigLocations = sequence
+    [ return ".fix-imports"
+    , Directory.getXdgDirectory Directory.XdgConfig "fix-imports"
+    ]
+
+firstJust :: [IO (Maybe a)] -> IO (Maybe a)
+firstJust [] = return Nothing
+firstJust (x : xs) = maybe (firstJust xs) (return . Just) =<< x
+
+readConfig :: FilePath -> IO (Maybe (Config.Config, [Text.Text]))
+readConfig = fmap (fmap Config.parse) . Util.catchENOENT . Text.IO.readFile
 
 mainConfig :: Config.Config -> [Flag] -> FilePath -> IO ()
 mainConfig config flags modulePath = do
@@ -83,10 +100,11 @@ mainConfig config flags modulePath = do
 data Flag = Config FilePath | Debug | Edit | Include String | Verbose
     deriving (Eq, Show)
 
-options :: [GetOpt.OptDescr Flag]
-options =
-    [ GetOpt.Option ['c'] ["config"] (GetOpt.ReqArg Config "path")
-        "path to config file, defaults to .fix-imports"
+options :: [FilePath] -> [GetOpt.OptDescr Flag]
+options configLocations =
+    [ GetOpt.Option ['c'] ["config"] (GetOpt.ReqArg Config "path") $
+        "path to config file, otherwise will look in "
+        <> List.intercalate ", " configLocations
     , GetOpt.Option [] ["edit"] (GetOpt.NoArg Edit)
         "print delete range and new import block, rather than the whole file"
     , GetOpt.Option [] ["debug"] (GetOpt.NoArg Debug)
@@ -98,10 +116,12 @@ options =
     ]
 
 parseArgs :: [String] -> IO (String, [Flag])
-parseArgs args = case GetOpt.getOpt GetOpt.Permute options args of
-    (flags, [modulePath], []) -> return (modulePath, flags)
-    (_, [], errs) -> usage $ concat errs
-    _ -> usage "too many args"
+parseArgs args = do
+    configLocations <- getConfigLocations
+    case GetOpt.getOpt GetOpt.Permute (options configLocations) args of
+        (flags, [modulePath], []) -> return (modulePath, flags)
+        (_, [], errs) -> usage $ concat errs
+        _ -> usage "too many args"
 
 extractFlags :: [Flag] -> (Bool, Bool, [FilePath])
 extractFlags flags =
@@ -114,9 +134,10 @@ extractFlags flags =
 usage :: String -> IO a
 usage msg = do
     name <- Environment.getProgName
+    configLocations <- getConfigLocations
     IO.hPutStr IO.stderr $
         GetOpt.usageInfo (msg ++ "\n" ++ name ++ " Module.hs <Module.hs")
-            options
+            (options configLocations)
     IO.hPutStrLn IO.stderr $
         "version: " ++ Version.showVersion Paths_fix_imports.version
     Exit.exitFailure

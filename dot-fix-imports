@@ -1,5 +1,6 @@
 -- fix-imports looks for a .fix-imports file in the current directory for
--- per-project configuration.  You can set the file explicitly with --config.
+-- per-project configuration, otherwise in ~/.config/fix-imports.
+-- You can set the file explicitly with --config.
 --
 -- The syntax is like ghc-pkg or cabal: word, colon, and a list of words.
 -- A line with leading space is a continuation of the previous line.

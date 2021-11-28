@@ -1,3 +1,5 @@
+- Look for config in ~/.config/fix-imports in addition to ./.fix-imports.
+
 - Switch from haskell-src-exts to ghc-lib-parser.  This fixes a bunch of
 parsing bugs.  Along the way I fixed a bug where locally bound names were
 misinterpreted as unqualified names.
