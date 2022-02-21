@@ -57,8 +57,8 @@ executable fix-imports
         , deepseq
         , directory
         , filepath
-        , ghc-lib-parser
-        , ghc-lib-parser-ex >= 8.10.0.6
+        , ghc-lib-parser == 8.10.5.20210606
+        , ghc-lib-parser-ex == 8.10.0.21
         , mtl
         , pretty
         , process
@@ -83,8 +83,8 @@ test-suite test
         , deepseq
         , directory
         , filepath
-        , ghc-lib-parser
-        , ghc-lib-parser-ex
+        , ghc-lib-parser == 8.10.5.20210606
+        , ghc-lib-parser-ex == 8.10.0.21
         , mtl
         , pretty
         , process
