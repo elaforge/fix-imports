@@ -57,6 +57,12 @@ executable fix-imports
         , deepseq
         , directory
         , filepath
+        -- 8.10 doesn't want to build with ghc 9.2 for some reason,
+        -- but ghc-lib-parser 9.2 also doesn't build with 9.2 at the moment.
+        -- I think the module structure totally changed anyway so it'll
+        -- be a ton of work to update.
+        -- , ghc-lib-parser == 9.2.2.20220307
+        -- , ghc-lib-parser-ex ==  9.2.0.2
         , ghc-lib-parser == 8.10.5.20210606
         , ghc-lib-parser-ex == 8.10.0.21
         , mtl

@@ -54,6 +54,7 @@ import qualified Data.Maybe as Maybe
 import qualified Data.Set as Set
 import           Data.Set (Set)
 import qualified Data.Text as Text
+import qualified Data.Text.IO as Text.IO
 import           Data.Text (Text)
 import qualified Data.Time.Clock as Clock
 import qualified Data.Tuple as Tuple
@@ -106,6 +107,8 @@ fixModule config modulePath source = do
         Right (mod, cmts) -> do
             mParse <- metric (mod `seq` (), cmts) "parse"
             index <- Index.load
+            when (Config._debug config) $ Text.IO.putStr $
+                "index:\n" <> Index.showIndex index
             mLoad <- metric () "load-index"
             let extracted = extract config mod cmts
             mExtract <- metric extracted "extract"

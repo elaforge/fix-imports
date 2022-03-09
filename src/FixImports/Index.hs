@@ -2,14 +2,14 @@
 -- | Maintain the index from Qualification to the full module from the package
 -- db that this Qualification probably intends.
 module FixImports.Index (
-    Index, Package, empty, load, makeIndex, parseSections
+    Index, Package, empty, load, showIndex, makeIndex, parseSections
 ) where
 import Prelude hiding (mod)
 import Control.Monad
 import qualified Data.Either as Either
 import qualified Data.List as List
 import qualified Data.Map as Map
-import qualified Data.Text as T
+import qualified Data.Text as Text
 import qualified Data.Maybe as Maybe
 import Data.Text (Text)
 
@@ -35,12 +35,18 @@ empty = Map.empty
 load :: IO Index
 load = build -- TODO load cache?
 
+showIndex :: Index -> Text
+showIndex index = Text.unlines
+    [ Text.pack k <> ": " <> Text.pack (show v)
+    | (Types.Qualification k, v) <- Map.toAscList index
+    ]
+
 build :: IO Index
 build = do
     (_, out, err) <- Util.readProcessWithExitCode "ghc-pkg"
         ["field", "*", "name,exposed,exposed-modules"]
-    unless (T.null err) $
-        IO.hPutStrLn IO.stderr $ "stderr from ghc-pkg: " ++ T.unpack err
+    unless (Text.null err) $
+        IO.hPutStrLn IO.stderr $ "stderr from ghc-pkg: " ++ Text.unpack err
     let (errors, index) = parseDump out
     unless (null errors) $
         IO.hPutStrLn IO.stderr $ "errors parsing ghc-pkg output: "
@@ -50,7 +56,7 @@ build = do
 makeIndex :: [(Text, [Types.ModuleName])] -- ^ [(package, modules)]
     -> Index
 makeIndex packages = Map.fromListWith (++)
-    [ (qual, [(T.unpack package, mod)])
+    [ (qual, [(Text.unpack package, mod)])
     | (package, modules) <- packages
     , mod <- modules
     , qual <- moduleQualifications mod
@@ -72,7 +78,7 @@ extractSections = Maybe.mapMaybe extract . Util.splitWith ((=="name") . fst)
             ]
         | exposed /= "True" = Nothing
         | otherwise = Just $
-            Right (name, map (Types.ModuleName . T.unpack) modules)
+            Right (name, map (Types.ModuleName . Text.unpack) modules)
     -- It may be missing exposed-modules, but that means I don't need it.
     extract _ = Nothing
 
@@ -83,15 +89,17 @@ moduleQualifications = map (Types.Qualification . Util.join ".")
     . filter (not . null) . List.tails . Util.split "." . Types.moduleName
 
 parseSections :: Text -> [(Text, [Text])] -- ^ [(section_name, words)]
-parseSections = List.unfoldr parseSection . stripComments . T.lines
+parseSections = List.unfoldr parseSection . stripComments . Text.lines
 
 stripComments :: [Text] -> [Text]
-stripComments = filter (not . T.null) . map (T.stripEnd . fst . T.breakOn "--")
+stripComments =
+    filter (not . Text.null) . map (Text.stripEnd . fst . Text.breakOn "--")
 
+-- | Consume a "tag: name, name," plus indents until the next dedented section.
 parseSection :: [Text] -> Maybe ((Text, [Text]), [Text])
 parseSection [] = Nothing
 parseSection (x:xs) =
-    Just ((tag, concatMap T.words (T.drop 1 rest : pre)), post)
+    Just ((tag, concatMap Text.words (Text.drop 1 rest : pre)), post)
     where
-    (tag, rest) = T.break (==':') x
-    (pre, post) = span (" " `T.isPrefixOf`) xs
+    (tag, rest) = Text.break (==':') x
+    (pre, post) = span (" " `Text.isPrefixOf`) xs
