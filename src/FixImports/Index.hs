@@ -98,8 +98,13 @@ stripComments =
 -- | Consume a "tag: name, name," plus indents until the next dedented section.
 parseSection :: [Text] -> Maybe ((Text, [Text]), [Text])
 parseSection [] = Nothing
-parseSection (x:xs) =
-    Just ((tag, concatMap Text.words (Text.drop 1 rest : pre)), post)
+parseSection (x:xs) = Just
+    ( (tag, map uncomma (concatMap Text.words (Text.drop 1 rest : pre)))
+    , post
+    )
     where
     (tag, rest) = Text.break (==':') x
     (pre, post) = span (" " `Text.isPrefixOf`) xs
+    -- Somewhere in 9.2, ghc-pkg switched from space separated to comma
+    -- separated.
+    uncomma t = Maybe.fromMaybe t (Text.stripSuffix "," t)
