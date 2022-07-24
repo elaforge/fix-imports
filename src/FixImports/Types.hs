@@ -1,4 +1,5 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE PackageImports #-}
 module FixImports.Types (
     module FixImports.Types
     , module GHC.LanguageExtensions.Type
@@ -11,8 +12,8 @@ import qualified Data.Set as Set
 import qualified Data.String as String
 import qualified System.FilePath as FilePath
 
-import           GHC.LanguageExtensions.Type (Extension(..))
-import qualified Language.Haskell.GhclibParserEx.GHC.Driver.Session
+import           "ghc-lib-parser" GHC.LanguageExtensions.Type (Extension(..))
+import qualified "ghc-lib-parser-ex" Language.Haskell.GhclibParserEx.GHC.Driver.Session
 
 
 type Error = String

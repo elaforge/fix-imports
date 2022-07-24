@@ -1,0 +1,7 @@
+packages: ./*.cabal
+
+constraints:
+    -- Force it to use ghc-lib-parser instead of the ghc library.
+    -- Otherwise I get a mismatch between the Extension type from
+    -- two different place.
+    ghc-lib-parser-ex -no-ghc-lib -auto

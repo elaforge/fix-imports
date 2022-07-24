@@ -63,8 +63,9 @@ executable fix-imports
         -- be a ton of work to update.
         -- , ghc-lib-parser == 9.2.2.20220307
         -- , ghc-lib-parser-ex ==  9.2.0.2
-        , ghc-lib-parser == 8.10.5.20210606
-        , ghc-lib-parser-ex == 8.10.0.21
+        , ghc-lib-parser == 8.10.7.20220219
+        , ghc-lib-parser-ex == 8.10.0.24
+
         , mtl
         , pretty
         , process
