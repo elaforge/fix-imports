@@ -178,7 +178,7 @@ parse text = (config, errors)
         , "sort-unqualified-last"
         , "unqualified"
         ]
-    fields = Map.fromList sections
+    fields = fmap (concatMap Text.words) $ Map.fromList sections
     sections = Index.parseSections text
     duplicates = map head $ filter ((>1) . length) $ List.group $ List.sort $
         map fst sections

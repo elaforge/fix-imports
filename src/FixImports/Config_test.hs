@@ -24,6 +24,10 @@ test_parse = do
             { _importOrder = Config.Priority ["A"] ["B"]
             , _sortUnqualifiedLast = False
             }
+    rightEqual
+        (Config._leaveSpaceForQualified . Config._format <$>
+            f ["format:", "  leave-space-for-qualified"])
+        True
 
 test_parseUnqualified = do
     let f = Config._unqualified . parseConfig

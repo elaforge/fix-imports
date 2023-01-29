@@ -6,6 +6,7 @@ module FixImports.Index (
 ) where
 import Prelude hiding (mod)
 import Control.Monad
+import Data.Bifunctor (second)
 import qualified Data.Either as Either
 import qualified Data.List as List
 import qualified Data.Map as Map
@@ -66,7 +67,7 @@ parseDump :: Text -> ([String], Index)
 parseDump text = (errors, makeIndex packages)
     where
     (errors, packages) = Either.partitionEithers $
-        extractSections (parseSections text)
+        extractSections (parseGhcPkg text)
 
 extractSections :: [(Text, [Text])]
     -> [Either String (Text, [Types.ModuleName])]
@@ -88,23 +89,27 @@ moduleQualifications :: Types.ModuleName -> [Types.Qualification]
 moduleQualifications = map (Types.Qualification . Util.join ".")
     . filter (not . null) . List.tails . Util.split "." . Types.moduleName
 
-parseSections :: Text -> [(Text, [Text])] -- ^ [(section_name, words)]
+parseGhcPkg :: Text -> [(Text, [Text])]
+parseGhcPkg = map (second (map uncomma . concatMap Text.words)) . parseSections
+    where
+    -- Somewhere in 9.2, ghc-pkg switched from space separated to comma
+    -- separated.
+    uncomma t = Maybe.fromMaybe t (Text.stripSuffix "," t)
+
+parseSections :: Text -> [(Text, [Text])] -- ^ [(section_name, lines)]
 parseSections = List.unfoldr parseSection . stripComments . Text.lines
 
 stripComments :: [Text] -> [Text]
 stripComments =
     filter (not . Text.null) . map (Text.stripEnd . fst . Text.breakOn "--")
 
--- | Consume a "tag: name, name," plus indents until the next dedented section.
+-- | Consume a "tag: xyz" plus indents until the next dedented section.
 parseSection :: [Text] -> Maybe ((Text, [Text]), [Text])
 parseSection [] = Nothing
 parseSection (x:xs) = Just
-    ( (tag, map uncomma (concatMap Text.words (Text.drop 1 rest : pre)))
+    ( (tag, map Text.strip (Text.drop 1 rest : pre))
     , post
     )
     where
     (tag, rest) = Text.break (==':') x
     (pre, post) = span (" " `Text.isPrefixOf`) xs
-    -- Somewhere in 9.2, ghc-pkg switched from space separated to comma
-    -- separated.
-    uncomma t = Maybe.fromMaybe t (Text.stripSuffix "," t)
