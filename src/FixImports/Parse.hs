@@ -1,14 +1,11 @@
 {-# LANGUAGE DisambiguateRecordFields #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE NamedFieldPuns #-}
-
 {-# LANGUAGE TypeSynonymInstances #-}
-{-# LANGUAGE FlexibleInstances #-}
-
--- {-# LANGUAGE NoMonomorphismRestriction #-}
 module FixImports.Parse (
     -- * types
     Module
@@ -36,21 +33,21 @@ import qualified Data.Set as Set
 
 import qualified Language.Haskell.GhclibParserEx.GHC.Parser as Parser
 import qualified Language.Haskell.GhclibParserEx.GHC.Settings.Config as Config
-import qualified Language.Haskell.GhclibParserEx.GHC.Driver.Session as Session
+import qualified Language.Haskell.GhclibParserEx.GHC.Driver.Session as ExSession
 
-import qualified ApiAnnotation
-import qualified Bag
-import qualified BasicTypes
-import qualified FastString
-import qualified DynFlags
-import qualified ErrUtils
+import qualified GHC.Data.FastString as FastString
+import qualified GHC.Driver.Session as Session
 import qualified GHC.Hs as Hs
-import qualified Lexer
-import qualified Module
-import qualified OccName
-import qualified Outputable
-import qualified RdrName
-import qualified SrcLoc
+import qualified GHC.Parser.Annotation as Annotation
+import qualified GHC.Parser.Lexer as Lexer
+import qualified GHC.Types.Name.Occurrence as Occurrence
+import qualified GHC.Types.Name.Reader as Reader
+import qualified GHC.Types.SourceText as SourceText
+import qualified GHC.Types.SrcLoc as SrcLoc
+import qualified GHC.Data.Bag as Bag
+import qualified GHC.Unit.Module.Name as Name
+import qualified GHC.Unit.Types as Unit.Types
+import qualified GHC.Parser.Errors.Ppr as Errors.Ppr
 
 import qualified Data.Generics.Uniplate.Data as Uniplate
 
@@ -60,73 +57,89 @@ import qualified FixImports.Util as Util
 
 -- * parse
 
-type Module = Hs.HsModule Hs.GhcPs
+type Module = Hs.HsModule
+
+type Src = String
 
 -- | makeDynFlags forces parse into IO.  The reason seems to be that GHC
 -- puts dyn flags in a global variable.
-parse :: [Types.Extension] -> FilePath -> String
-    -> IO (Either String (Module, [Comment]))
+parse :: [Types.Extension] -> FilePath -> Src
+    -> IO (Either String (Hs.HsModule, [Comment]))
 parse extensions filename src = makeDynFlags extensions filename src >>= \case
     Left err -> return $ Left $ "parsing pragmas: " <> err
     Right dynFlags -> return $
         extractParseResult dynFlags $ Parser.parseFile filename dynFlags src
-
-makeDynFlags :: [Types.Extension] -> FilePath -> String
-    -> IO (Either Types.Error DynFlags.DynFlags)
-makeDynFlags extensions fname src = do
-    Session.parsePragmasIntoDynFlags defaultDynFlags
-        (extensions ++ defaultExtensions, []) fname src
-    where
-    defaultExtensions = DynFlags.languageExtensions Nothing
-
-defaultDynFlags :: DynFlags.DynFlags
-defaultDynFlags =
-    DynFlags.defaultDynFlags Config.fakeSettings Config.fakeLlvmConfig
 
 data Comment = Comment { _span :: !Types.SrcSpan, _comment :: !String }
     deriving (Eq, Ord, Show)
 
 instance DeepSeq.NFData Comment where rnf (Comment _ cmt) = DeepSeq.rnf cmt
 
-extractComment :: SrcLoc.Located ApiAnnotation.AnnotationComment -> Comment
-extractComment cmt = Comment (extractSrcSpan (SrcLoc.getLoc cmt)) $
-    case SrcLoc.unLoc cmt of
-        ApiAnnotation.AnnDocCommentNext s -> s
-        ApiAnnotation.AnnDocCommentPrev s -> s
-        ApiAnnotation.AnnDocCommentNamed s -> s
-        ApiAnnotation.AnnDocSection _depth s -> s
-        ApiAnnotation.AnnDocOptions s -> s
-        ApiAnnotation.AnnLineComment s -> s
-        ApiAnnotation.AnnBlockComment s -> s
+makeDynFlags :: [Types.Extension] -> FilePath -> Src
+    -> IO (Either String Session.DynFlags)
+makeDynFlags extensions fname src =
+    ExSession.parsePragmasIntoDynFlags defaultDynFlags
+        (extensions ++ defaultExtensions, []) fname src
+    where defaultExtensions = Session.languageExtensions Nothing
 
-extractParseResult :: SrcLoc.HasSrcSpan a => DynFlags.DynFlags
-    -> Lexer.ParseResult a -> Either String (SrcLoc.SrcSpanLess a, [Comment])
-extractParseResult dynFlags = \case
+defaultDynFlags :: Session.DynFlags
+defaultDynFlags =
+    Session.defaultDynFlags Config.fakeSettings Config.fakeLlvmConfig
+
+extractParseResult :: Session.DynFlags
+    -> Lexer.ParseResult (SrcLoc.GenLocated l Module)
+    -> Either String (Module, [Comment])
+extractParseResult _dynFlags = \case
     Lexer.POk state val -> Right
         ( SrcLoc.unLoc val
-        , map extractComment (Lexer.comment_q state)
+        , List.sort $ map extractComment (Lexer.comment_q state)
+            ++ maybe [] (map extractComment) (Lexer.header_comments state)
+            ++ importComments (SrcLoc.unLoc val)
         -- Lexer.annotations_comments I think is supposed to have comments
         -- associated with their "attached" SrcSpan, whatever that is.
         -- In any case, it's empty for comments in the import block at least.
         )
     Lexer.PFailed state -> Left $ unlines $ concat
-        [ map (("warn: "<>) . show) $ Bag.bagToList warns
-        , map (renderSDoc dynFlags) $ ErrUtils.pprErrMsgBagWithLoc errors
+        [ map (("warn: "<>) . show . Errors.Ppr.pprWarning) $
+            Bag.bagToList warns
+        , map (("error: "<>) . show . Errors.Ppr.pprError) $
+            Bag.bagToList errors
         ]
-        where (warns, errors) = Lexer.getMessages state dynFlags
+        where (warns, errors) = Lexer.getMessages state
 
-renderSDoc :: DynFlags.DynFlags -> Outputable.SDoc -> String
-renderSDoc dynFlags sdoc =
-    Outputable.renderWithStyle dynFlags sdoc
-        (Outputable.defaultErrStyle dynFlags)
+extractComment :: Hs.LEpaComment -> Comment
+extractComment cmt =
+    Comment (extractRealSrcSpan (Annotation.anchor (SrcLoc.getLoc cmt))) $
+        case Annotation.ac_tok (SrcLoc.unLoc cmt) of
+            Annotation.EpaDocCommentNext s -> s
+            Annotation.EpaDocCommentPrev s -> s
+            Annotation.EpaDocCommentNamed s -> s
+            Annotation.EpaDocSection _depth s -> s
+            Annotation.EpaDocOptions s -> s
+            Annotation.EpaLineComment s -> s
+            Annotation.EpaBlockComment s -> s
+            Annotation.EpaEofComment -> ""
 
 -- * extract
+
+importComments :: Hs.HsModule -> [Comment]
+importComments =
+    map extractComment
+        . concatMap (extract . extractAnn . Annotation.ann . SrcLoc.getLoc)
+        . Hs.hsmodImports
+    where
+    extractAnn = \case
+        Annotation.EpAnn _anchor _anns comments -> comments
+        Annotation.EpAnnNotUsed -> Annotation.emptyComments
+    extract = \case
+        Annotation.EpaComments prior -> prior
+        Annotation.EpaCommentsBalanced prior following -> prior ++ following
 
 -- | Qualifications of all the qualified names in this module.
 qualifications :: Module -> Set.Set Types.Qualification
 qualifications mod = Set.fromList
-    [ Types.Qualification $ Module.moduleNameString qmod
-    | RdrName.Qual qmod _occName <- Uniplate.universeBi mod
+    [ Types.Qualification $ Name.moduleNameString moduleName
+    | Reader.Qual moduleName _occName <- Uniplate.universeBi mod
     ]
 
 -- | All unqualified names which are referenced in the module.  This is a lot
@@ -139,8 +152,8 @@ unqualifieds mod = unqualifiedTypes mod <> unqualifiedValues mod
 unqualifiedTypes :: Module -> Set.Set Types.Name
 unqualifiedTypes mod = Set.fromList $ do
     hsType :: Hs.HsType Hs.GhcPs <- Uniplate.universeBi mod
-    RdrName.Unqual occName <- Uniplate.universeBi hsType
-    let var = OccName.occNameString occName
+    Reader.Unqual occName <- Uniplate.universeBi hsType
+    let var = Occurrence.occNameString occName
     -- I don't want type variables, since they aren't references.  I can just
     -- filter out lower-case, which seems to be good enough?
     Monad.guard $ case var of
@@ -156,27 +169,29 @@ unqualifiedValues mod = Set.fromList $ do
     -- I think 'pats' is the binding names.
     -- let pats = concatMap Hs.m_pats matches
     let rhss = map Hs.m_grhss matches
-    RdrName.Unqual occName <- Uniplate.universeBi rhss
-    return $ inferName $ OccName.occNameString occName
+    Reader.Unqual occName <- Uniplate.universeBi rhss
+    return $ inferName $ Occurrence.occNameString occName
 
 -- | Return half-open line range of import block, starting from (0 based) line
 -- of first import to the line after the last one.
 importRange :: Module -> (Int, Int)
 importRange mod =
-    get . unzip . map range . Maybe.mapMaybe (getSpan . SrcLoc.getLoc)
+    get . unzip . map range
+        . Maybe.mapMaybe (getSpan . Annotation.locA . SrcLoc.getLoc)
         . Hs.hsmodImports $ mod
     where
     -- This range is 1-based inclusive, and I want 0-based half-open, so
     -- subtract 1 from the start.
+    get :: ([Int], [Int]) -> (Int, Int)
     get (starts@(_:_), ends@(_:_)) = (minimum starts - 1, maximum ends)
     -- No imports, pick the line after export list or module header.
     get _ = fromMaybe (0, 0) $ do
         span <- getSpan =<<
-            (SrcLoc.getLoc <$> Hs.hsmodExports mod)
-            <|> (SrcLoc.getLoc <$> Hs.hsmodName mod)
+            (Annotation.locA . SrcLoc.getLoc <$> Hs.hsmodExports mod)
+            <|> (Annotation.locA . SrcLoc.getLoc <$> Hs.hsmodName mod)
         return (SrcLoc.srcSpanEndLine span, SrcLoc.srcSpanEndLine span)
     range span = (SrcLoc.srcSpanStartLine span, SrcLoc.srcSpanEndLine span)
-    getSpan (SrcLoc.RealSrcSpan span) = Just span
+    getSpan (SrcLoc.RealSrcSpan span _) = Just span
     getSpan _ = Nothing
 
 -- ** Import
@@ -184,36 +199,40 @@ importRange mod =
 extractImports :: Module -> [Types.Import]
 extractImports = map extractImport . Hs.hsmodImports
 
-extractImport :: SrcLoc.Located (Hs.ImportDecl Hs.GhcPs) -> Types.Import
+extractImport :: Hs.LImportDecl Hs.GhcPs -> Types.Import
 extractImport locDecl = Types.Import
-    { _importName = Types.ModuleName $ Module.moduleNameString $ SrcLoc.unLoc $
+    { _importName = Types.ModuleName $ Name.moduleNameString $ SrcLoc.unLoc $
         Hs.ideclName decl
-    , _importPkgQualifier = FastString.unpackFS . BasicTypes.sl_fs <$>
+    , _importPkgQualifier = FastString.unpackFS . SourceText.sl_fs <$>
         Hs.ideclPkgQual decl
-    , _importSource = Hs.ideclSource decl
+    , _importIsBoot = Hs.ideclSource decl == Unit.Types.IsBoot
     , _importSafe = Hs.ideclSafe decl
     -- I don't distinguish Hs.QualifiedPost
     , _importQualified = Hs.ideclQualified decl /= Hs.NotQualified
-    , _importAs = Types.Qualification . Module.moduleNameString . SrcLoc.unLoc
+    , _importAs = Types.Qualification . Name.moduleNameString . SrcLoc.unLoc
         <$> Hs.ideclAs decl
     , _importHiding = maybe False fst $ Hs.ideclHiding decl
     , _importEntities = map (extractEntity . SrcLoc.unLoc) . SrcLoc.unLoc
         . snd <$> Hs.ideclHiding decl
-    , _importSpan = extractSrcSpan (SrcLoc.getLoc locDecl)
+    , _importSpan = extractSrcSpan $ Annotation.locA $ SrcLoc.getLoc locDecl
+
     }
     where decl = SrcLoc.unLoc locDecl
 
 extractSrcSpan :: SrcLoc.SrcSpan -> Types.SrcSpan
-extractSrcSpan (SrcLoc.RealSrcSpan span) = Types.SrcSpan
+extractSrcSpan (SrcLoc.RealSrcSpan span _) = extractRealSrcSpan span
+extractSrcSpan (SrcLoc.UnhelpfulSpan fstr) =
+    error $ "UnhelpfulSpan: " <> show fstr
+    -- I think GHC uses these internally, in phases after Hs.GhcPs.
+
+extractRealSrcSpan :: SrcLoc.RealSrcSpan -> Types.SrcSpan
+extractRealSrcSpan span = Types.SrcSpan
     -- GHC SrcSpan has 1-based lines, I use 0-based ones.
     { _startLine = SrcLoc.srcSpanStartLine span - 1
     , _startCol = SrcLoc.srcSpanStartCol span
     , _endLine = SrcLoc.srcSpanEndLine span - 1
     , _endCol = SrcLoc.srcSpanEndCol span
     }
-extractSrcSpan (SrcLoc.UnhelpfulSpan fstr) =
-    error $ "UnhelpfulSpan: " <> show fstr
-    -- I think GHC uses these internally, in phases after Hs.GhcPs.
 
 extractEntity :: Hs.IE Hs.GhcPs -> Either Types.Error Types.Entity
 extractEntity = fmap entity . \case
@@ -225,9 +244,7 @@ extractEntity = fmap entity . \case
     Hs.IEThingAll _ var -> Right (unvar var, Just "(..)")
     -- Constructor(x, y)
     -- What is _wildcard?
-    -- I think _labels is for records, but I don't think it's populated at the
-    -- GhcPs stage, since how would it know?
-    Hs.IEThingWith _ var _wildcard things _labels -> Right
+    Hs.IEThingWith _ var _wildcard things -> Right
         ( unvar var
         , Just $ "(" <> List.intercalate ", " (map (varStr . unvar) things)
             <> ")"
@@ -237,13 +254,12 @@ extractEntity = fmap entity . \case
     Hs.IEGroup {} -> Left "IEGroup"
     Hs.IEDoc {} -> Left "IEDoc"
     Hs.IEDocNamed {} -> Left "IEDocNamed"
-    Hs.XIE {} -> Left "XIE"
     where
     entity ((qual, var), list) = Types.Entity qual var list
     unvar var = case SrcLoc.unLoc var of
         Hs.IEName n -> (Nothing, toName n)
-        Hs.IEPattern n -> (Just "pattern", toName n)
-        Hs.IEType n -> (Just "type", toName n)
+        Hs.IEPattern _ n -> (Just "pattern", toName n)
+        Hs.IEType _ n -> (Just "type", toName n)
     varStr (Just qual, name) = qual <> " " <> Types.showName name
     varStr (Nothing, name) = Types.showName name
     toName = inferName . unRdrName . SrcLoc.unLoc
@@ -253,13 +269,13 @@ inferName var
     | all Util.haskellOpChar var = Types.Operator var
     | otherwise = Types.Name var
 
-unRdrName :: RdrName.RdrName -> String
+unRdrName :: Reader.RdrName -> String
 unRdrName = \case
-    RdrName.Unqual occName -> OccName.occNameString occName
-    RdrName.Qual mod occName ->
-        Module.moduleNameString mod <> "." <> OccName.occNameString occName
+    Reader.Unqual occName -> Occurrence.occNameString occName
+    Reader.Qual mod occName ->
+        Name.moduleNameString mod <> "." <> Occurrence.occNameString occName
     -- TODO what is this?
-    RdrName.Orig _mod occName -> -- modName mod <>
-        "+" <> OccName.occNameString occName
+    Reader.Orig _mod occName -> -- modName mod <>
+        "+" <> Occurrence.occNameString occName
     -- TODO what is this?
-    RdrName.Exact _name -> "exact"
+    Reader.Exact _name -> "exact"

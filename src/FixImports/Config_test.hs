@@ -79,7 +79,6 @@ test_pickModule = do
     equal (f [] "X.hs" [(Just "p1", "A.B.M"), (Just "p2", "Z.M")]) $
         Just (Just "p2", "Z.M")
 
-
 parseConfig :: [Text.Text] -> Config.Config
 parseConfig lines
     | null errs = config

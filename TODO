@@ -1,6 +1,8 @@
 * done; - not done; / decided against
 
 bug:
+  - support unqualified constructors
+    . e.g. NonEmpty((:|))
   * Ignore unqualified names if they're already imported from a different
     module.
   - It wants to import unqualified names defined in the module.

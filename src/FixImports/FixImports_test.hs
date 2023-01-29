@@ -146,6 +146,7 @@ test_unqualified = do
         , []
         , "import A.B (a, c, z)\n"
         )
+    -- Remove an unused one, if I'm managing it.
     rightEqual (run "A.B (a, c)" "import A.B (a, c)\nx = a")
         ( []
         , []

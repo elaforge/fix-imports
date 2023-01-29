@@ -578,7 +578,7 @@ percent = (<>"%") . showt . isInt . round . (*100)
 
 showDuration :: Clock.NominalDiffTime -> Text
 showDuration =
-    Text.pack . ($"s") . Numeric.showFFloat (Just 2) . isDouble . realToFrac
+    Text.pack . ($ "s") . Numeric.showFFloat (Just 2) . isDouble . realToFrac
     where
     isDouble :: Double -> Double
     isDouble = id

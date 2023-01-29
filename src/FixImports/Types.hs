@@ -55,7 +55,7 @@ data Import = Import {
     -- | SOURCE pragma?  There is also ideclSourceSrc, but it looks like it's
     -- just to preserve the exact case or British-ness of the pragma, so I can
     -- discard it.
-    , _importSource :: !Bool
+    , _importIsBoot :: !Bool
     , _importSafe :: !Bool -- ^ safe import
     , _importQualified :: !Bool -- ^ qualified
     , _importAs :: !(Maybe Qualification) -- ^ import as
@@ -77,7 +77,7 @@ makeImport :: ModuleName -> Import
 makeImport name = Import
     { _importName = name
     , _importPkgQualifier = Nothing
-    , _importSource = False
+    , _importIsBoot = False
     , _importSafe = False
     , _importQualified = False
     , _importAs = Nothing
