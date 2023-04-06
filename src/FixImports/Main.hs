@@ -63,13 +63,13 @@ readConfig = fmap (fmap Config.parse) . Util.catchENOENT . Text.IO.readFile
 
 mainConfig :: Config.Config -> [Flag] -> FilePath -> IO ()
 mainConfig config flags modulePath = do
-    let (verbose, debug, includes) = extractFlags flags
+    let (verbose, debug, includes, mbPkgCache) = extractFlags flags
     source <- IO.getContents
     config <- return $ config
         { Config._includes = includes ++ Config._includes config
         , Config._debug = debug
         }
-    (result, logs) <- FixImports.fixModule config modulePath source
+    (result, logs) <- FixImports.fixModule config mbPkgCache modulePath source
         `Exception.catch` \(exc :: Exception.SomeException) ->
             return (Left $ "exception: " ++ show exc, [])
     case result of
@@ -97,7 +97,10 @@ mainConfig config flags modulePath = do
                     ]
             Exit.exitSuccess
 
-data Flag = Config FilePath | Debug | Edit | Include String | Verbose
+data Flag =
+    Config FilePath | Debug | Edit | Include String
+    | PackageCache String
+    | Verbose
     deriving (Eq, Show)
 
 options :: [FilePath] -> [GetOpt.OptDescr Flag]
@@ -105,12 +108,14 @@ options configLocations =
     [ GetOpt.Option ['c'] ["config"] (GetOpt.ReqArg Config "path") $
         "path to config file, otherwise will look in "
         <> List.intercalate ", " configLocations
-    , GetOpt.Option [] ["edit"] (GetOpt.NoArg Edit)
-        "print delete range and new import block, rather than the whole file"
     , GetOpt.Option [] ["debug"] (GetOpt.NoArg Debug)
         "print debugging info on stderr"
+    , GetOpt.Option [] ["edit"] (GetOpt.NoArg Edit)
+        "print delete range and new import block, rather than the whole file"
     , GetOpt.Option ['i'] [] (GetOpt.ReqArg Include "path")
         "add to module include path"
+    , GetOpt.Option [] ["package-cache"] (GetOpt.ReqArg PackageCache "path") $
+        "path to package.cache file, use instead of .ghc.environment or ghc-pkg"
     , GetOpt.Option ['v'] [] (GetOpt.NoArg Verbose)
         "print added and removed modules on stderr"
     ]
@@ -123,11 +128,12 @@ parseArgs args = do
         (_, [], errs) -> usage $ concat errs
         _ -> usage "too many args"
 
-extractFlags :: [Flag] -> (Bool, Bool, [FilePath])
+extractFlags :: [Flag] -> (Bool, Bool, [FilePath], Maybe FilePath)
 extractFlags flags =
     ( Verbose `elem` flags
     , Debug `elem` flags
     , "." : [p | Include p <- flags]
+    , Util.head [p | PackageCache p <- flags]
     )
     -- Includes always have the current directory first.
 

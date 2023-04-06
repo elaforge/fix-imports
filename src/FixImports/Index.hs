@@ -42,11 +42,17 @@ type Package = String
 empty :: Index
 empty = Map.empty
 
-load :: IO (Index, Text)
-load = fromGhcEnvironment >>= \case
+load :: Maybe FilePath -> IO (Index, Text)
+load (Just pkgCache) = do
+    unitNameModules <- PkgCache.loadCache pkgCache
+    return
+        ( makeIndex $ map (fmap (map Types.ModuleName)) $
+            map snd unitNameModules
+        , "--package-cache flag"
+        )
+load Nothing = fromGhcEnvironment >>= \case
     Just index -> return (index, ".ghc.environment")
     Nothing -> (, "global ghc-pkg") <$> fromGhcPkg
-    -- TODO ghc pkg could also use PkgCache to load the global db
 
 showIndex :: Index -> Text
 showIndex index = Text.unlines

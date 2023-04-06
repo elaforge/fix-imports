@@ -95,9 +95,9 @@ type Metric = (Clock.UTCTime, Text)
 addMetrics :: [Metric] -> Result -> Result
 addMetrics ms result = result { resultMetrics = ms ++ resultMetrics result }
 
-fixModule :: Config.Config -> FilePath -> String
+fixModule :: Config.Config -> Maybe FilePath -> FilePath -> String
     -> IO (Either String Result, [Text])
-fixModule config modulePath source = do
+fixModule config mbPkgCache modulePath source = do
     mStart <- metric () "start"
     processedSource <- cppModule modulePath source
     mCpp <- metric () "cpp"
@@ -106,7 +106,7 @@ fixModule config modulePath source = do
         Left err -> return (Left err, [])
         Right (mod, cmts) -> do
             mParse <- metric (mod `seq` (), cmts) "parse"
-            (index, indexFrom) <- Index.load
+            (index, indexFrom) <- Index.load mbPkgCache
             when (Config._debug config) $ Text.IO.putStr $
                 "index from " <> indexFrom <> ":\n" <> Index.showIndex index
             mLoad <- metric () "load-index"

@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 module FixImports.PkgCache (
-    load, UnitId, PkgName, ModuleName
+    UnitId, PkgName, ModuleName
+    , load, loadCache
 ) where
 import           Data.Maybe (mapMaybe)
 import           Data.Set (Set)
