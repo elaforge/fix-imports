@@ -1,3 +1,5 @@
+### 2.4.0
+
 - Support cabal v2, look for .ghc.environment.* and get pkgs from there.
 
 - Look for config in ~/.config/fix-imports in addition to ./.fix-imports.
