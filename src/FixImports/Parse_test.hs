@@ -117,6 +117,7 @@ test_qualifications = do
     rightEqual (f "f :: A.X -> B.Y") ["A", "B"]
     rightEqual (f "f = x A.</> y") ["A"]
     rightEqual (f "f = (A.</>) x y") ["A"]
+    rightEqual (f "f = g @A.B @C.D") ["A", "C"]
 
 test_unqualifiedValues = do
     let f = fmap (map unname . Set.toList . Parse.unqualifiedValues) . parse

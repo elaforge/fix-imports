@@ -8,9 +8,37 @@ bug:
   - It wants to import unqualified names defined in the module.
 
 feature:
-  - support nix-style cabal
+  * support nix-style cabal
     I need to get ghc-pkg to see the local packages... is it one of those
     hidden files?
+    . It's .ghc.environment.x86_64-darwin-9.2.5:
+      clear-package-db
+      global-package-db
+      package-db /Users/elaforge/.cabal/store/ghc-9.2.5/package.db
+      package-db dist-newstyle/packagedb/ghc-9.2.5
+      package-id hlibgit2-0.18.0.16-inplace
+      package-id base-4.16.4.0
+      package-id bndngs-DSL-1.0.25-d82df022
+    . Since the package db will have multiple packages of the same name,
+      I need to search the explicit package ids.
+    . ghc-pkg --unit-id --no-user-package-db --package-db .. \
+        field pkgname name,exposed,exposed-modules
+    . But ghc-pkg doesn't let me list packages in fields, I'd have to run it
+      a bunch of times.
+    . So, parse the files myself?  I would read the *.conf files, but it
+      would be nicer to read package.cache.
+    . Where is ghc-pkg source?
+      import qualified GHC.Unit.Database as GhcPkg
+      (db_stack, GhcPkg.DbOpenReadOnly, flag_db_stack)
+        <- getPkgDatabases verbosity GhcPkg.DbOpenReadOnly
+      GhcPkg.readPackageDbForGhcPkg cache mode
+        if not reading the cache:
+      BS.readFile file >>= fmap fst . parsePackageInfo
+      parseInstalledPackageInfo
+      readPackageDbForGhcPkg :: Binary pkgs => FilePath -> DbOpenMode mode t
+        -> IO (pkgs, DbOpenMode mode PackageDbLock)
+      readPackageDbForGhcPkg "path" DbOpenReadOnly
+
   ambiguous import resolution:
     - Ask interactively.
       . This requires deeper integration, but vim does have menu selection

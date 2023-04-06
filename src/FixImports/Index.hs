@@ -1,21 +1,30 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TupleSections #-}
 -- | Maintain the index from Qualification to the full module from the package
 -- db that this Qualification probably intends.
 module FixImports.Index (
     Index, Package, empty, load, showIndex, makeIndex, parseSections
 ) where
 import Prelude hiding (mod)
-import Control.Monad
-import Data.Bifunctor (second)
+import           Control.Monad
+import           Data.Bifunctor (second)
+import           Data.Maybe (mapMaybe)
+import           Data.Text (Text)
+import           System.FilePath ((</>))
 import qualified Data.Either as Either
 import qualified Data.List as List
 import qualified Data.Map as Map
-import qualified Data.Text as Text
 import qualified Data.Maybe as Maybe
-import Data.Text (Text)
+import qualified Data.Set as Set
+import qualified Data.Text as Text
+import qualified Data.Text.IO as Text.IO
+import qualified GHC.Paths
 
+import qualified System.Directory as Directory
 import qualified System.IO as IO
 
+import qualified FixImports.PkgCache as PkgCache
 import qualified FixImports.Types as Types
 import qualified FixImports.Util as Util
 
@@ -33,8 +42,11 @@ type Package = String
 empty :: Index
 empty = Map.empty
 
-load :: IO Index
-load = build -- TODO load cache?
+load :: IO (Index, Text)
+load = fromGhcEnvironment >>= \case
+    Just index -> return (index, ".ghc.environment")
+    Nothing -> (, "global ghc-pkg") <$> fromGhcPkg
+    -- TODO ghc pkg could also use PkgCache to load the global db
 
 showIndex :: Index -> Text
 showIndex index = Text.unlines
@@ -42,8 +54,50 @@ showIndex index = Text.unlines
     | (Types.Qualification k, v) <- Map.toAscList index
     ]
 
-build :: IO Index
-build = do
+-- | I think the global package db is always under the libdir?
+bootPkgDb :: FilePath
+bootPkgDb = GHC.Paths.libdir </> "package.conf.d"
+
+fromGhcEnvironment :: IO (Maybe Index)
+fromGhcEnvironment = parseGhcEnvironment >>= \case
+    Nothing -> return Nothing
+    Just (pkgDbs, unitIds) -> do
+        nameModules <- PkgCache.load (Set.fromList unitIds)
+            (bootPkgDb : pkgDbs)
+        return $ Just $ makeIndex $
+            map (fmap (map Types.ModuleName)) nameModules
+
+-- | The code to write .ghc.environment is in Cabal
+-- Distribution.Simple.GHC.Internal, the code to read it is copy pasted over
+-- into cabal-install Distribution.Client.CmdInstall.  So they're not even
+-- thinking of being consistent with themselves, let alone anyone else.
+-- Too much bother.
+parseGhcEnvironment :: IO (Maybe ([FilePath], [PkgCache.UnitId]))
+parseGhcEnvironment = do
+    envFiles <- filter (".ghc.environment." `List.isPrefixOf`) <$>
+        Directory.listDirectory "."
+    case envFiles of
+        [] -> return Nothing
+        [envFile] -> Just . parseEnvFile <$> Text.IO.readFile envFile
+        _ -> error $ "multiple ghc env files: " <> unwords envFiles
+
+parseEnvFile :: Text -> ([FilePath], [PkgCache.UnitId])
+parseEnvFile = Either.partitionEithers . mapMaybe parse . Text.lines
+    where
+    parse line = case Text.words line of
+        ["package-db", path] -> Just $ Left $ Text.unpack path
+        ["package-id", unit] -> Just $ Right unit
+        _ -> Nothing
+    -- clear-package-db
+    -- global-package-db
+    -- package-db /Users/elaforge/.cabal/store/ghc-9.2.5/package.db
+    -- package-db dist-newstyle/packagedb/ghc-9.2.5
+    -- package-id hlibgit2-0.18.0.16-inplace
+    -- package-id base-4.16.4.0
+    -- package-id bndngs-DSL-1.0.25-d82df022
+
+fromGhcPkg :: IO Index
+fromGhcPkg = do
     (_, out, err) <- Util.readProcessWithExitCode "ghc-pkg"
         ["field", "*", "name,exposed,exposed-modules"]
     unless (Text.null err) $
@@ -113,3 +167,8 @@ parseSection (x:xs) = Just
     where
     (tag, rest) = Text.break (==':') x
     (pre, post) = span (" " `Text.isPrefixOf`) xs
+
+
+-- * read cache
+
+

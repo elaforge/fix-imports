@@ -1,3 +1,5 @@
+- Support cabal v2, look for .ghc.environment.* and get pkgs from there.
+
 - Look for config in ~/.config/fix-imports in addition to ./.fix-imports.
 
 - Switch from haskell-src-exts to ghc-lib-parser.  This fixes a bunch of

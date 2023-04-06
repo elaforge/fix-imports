@@ -106,9 +106,9 @@ fixModule config modulePath source = do
         Left err -> return (Left err, [])
         Right (mod, cmts) -> do
             mParse <- metric (mod `seq` (), cmts) "parse"
-            index <- Index.load
+            (index, indexFrom) <- Index.load
             when (Config._debug config) $ Text.IO.putStr $
-                "index:\n" <> Index.showIndex index
+                "index from " <> indexFrom <> ":\n" <> Index.showIndex index
             mLoad <- metric () "load-index"
             let extracted = extract config mod cmts
             mExtract <- metric extracted "extract"
