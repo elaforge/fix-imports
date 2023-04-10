@@ -1,3 +1,6 @@
+- add --package-cache flag, to read from a specific package cache.  Should be
+faster than ghc-pkg.
+
 ### 2.4.0
 
 - Support cabal v2, look for .ghc.environment.* and get pkgs from there.
