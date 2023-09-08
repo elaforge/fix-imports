@@ -1,5 +1,5 @@
 name: fix-imports
-version: 2.4.0
+version: 3.0.0
 cabal-version: >= 1.10
 build-type: Simple
 synopsis: Program to manage the imports of a haskell module
@@ -59,8 +59,8 @@ executable fix-imports
         , deepseq
         , directory
         , filepath
-        , ghc-lib-parser == 9.2.5.20221107
-        , ghc-lib-parser-ex == 9.2.1.1
+        , ghc-lib-parser
+        , ghc-lib-parser-ex
         , ghc-paths
         , mtl
         , pretty
@@ -69,12 +69,14 @@ executable fix-imports
         , text
         , time
         , uniplate
-        -- , test-karya
-        -- , el-debug
     ghc-options:
         -main-is FixImports.Main
         -Wall
         -fno-warn-name-shadowing
+
+
+        -- , ghc-lib-parser == 9.2.5.20221107
+        -- , ghc-lib-parser-ex == 9.2.1.1
 
 test-suite test
     type: exitcode-stdio-1.0
@@ -90,8 +92,8 @@ test-suite test
         , deepseq
         , directory
         , filepath
-        , ghc-lib-parser == 9.2.5.20221107
-        , ghc-lib-parser-ex == 9.2.1.1
+        , ghc-lib-parser
+        , ghc-lib-parser-ex
         , ghc-paths
         , mtl
         , pretty
@@ -100,8 +102,6 @@ test-suite test
         , text
         , time
         , uniplate
-
-        , test-karya
     other-modules:
         FixImports.Config
         FixImports.Config_test
