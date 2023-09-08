@@ -48,6 +48,8 @@ import qualified GHC.Data.Bag as Bag
 import qualified GHC.Unit.Module.Name as Name
 import qualified GHC.Unit.Types as Unit.Types
 import qualified GHC.Parser.Errors.Ppr as Errors.Ppr
+import qualified GHC.Unit.Module.Warnings as Warnings
+import qualified GHC.Types.Error as Error
 
 import qualified Data.Generics.Uniplate.Data as Uniplate
 
@@ -100,21 +102,18 @@ extractParseResult _dynFlags = \case
         -- In any case, it's empty for comments in the import block at least.
         )
     Lexer.PFailed state -> Left $ unlines $ concat
-        [ map (("warn: "<>) . show . Errors.Ppr.pprWarning) $
+        [ map (("warn: "<>) . show . Warnings.pprWarningTxtForMsg) $
             Bag.bagToList warns
-        , map (("error: "<>) . show . Errors.Ppr.pprError) $
+        , map (("error: "<>) . show . Warnings.pprWarningTxtForMsg) $
             Bag.bagToList errors
         ]
-        where (warns, errors) = Lexer.getMessages state
+        where (warns, errors) = Error.getMessages state
 
 extractComment :: Hs.LEpaComment -> Comment
 extractComment cmt =
     Comment (extractRealSrcSpan (Annotation.anchor (SrcLoc.getLoc cmt))) $
         case Annotation.ac_tok (SrcLoc.unLoc cmt) of
-            Annotation.EpaDocCommentNext s -> s
-            Annotation.EpaDocCommentPrev s -> s
-            Annotation.EpaDocCommentNamed s -> s
-            Annotation.EpaDocSection _depth s -> s
+            Annotation.EpaDocComment s -> s
             Annotation.EpaDocOptions s -> s
             Annotation.EpaLineComment s -> s
             Annotation.EpaBlockComment s -> s
