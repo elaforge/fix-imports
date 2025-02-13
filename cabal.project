@@ -1,6 +1,6 @@
 packages:
     ./*.cabal
-    /Users/elaforge/src/el-debug/*.cabal
+    -- /Users/elaforge/src/el-debug/*.cabal
 
 constraints:
     -- Force it to use ghc-lib-parser instead of the ghc library.

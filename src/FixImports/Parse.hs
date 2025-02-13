@@ -6,6 +6,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE TypeFamilies #-} -- without it extractEntity unvar unhappy
 module FixImports.Parse (
     -- * types
     Module
@@ -27,6 +28,7 @@ import qualified Control.DeepSeq as DeepSeq
 import qualified Control.Monad as Monad
 import qualified Data.Char as Char
 import qualified Data.List as List
+import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Maybe as Maybe
 import           Data.Maybe (fromMaybe)
 import qualified Data.Set as Set
@@ -36,18 +38,23 @@ import qualified Language.Haskell.GhclibParserEx.GHC.Settings.Config as Config
 import qualified Language.Haskell.GhclibParserEx.GHC.Driver.Session as ExSession
 
 import qualified GHC.Data.FastString as FastString
+import qualified GHC.Data.Strict as Strict
 import qualified GHC.Driver.Session as Session
+import qualified GHC.Driver.Ppr as Ppr
 import qualified GHC.Hs as Hs
+import qualified GHC.Hs.DocString as DocString
 import qualified GHC.Parser.Annotation as Annotation
 import qualified GHC.Parser.Lexer as Lexer
+import qualified GHC.Types.Error as Error
 import qualified GHC.Types.Name.Occurrence as Occurrence
 import qualified GHC.Types.Name.Reader as Reader
 import qualified GHC.Types.SourceText as SourceText
 import qualified GHC.Types.SrcLoc as SrcLoc
+import qualified GHC.Types.PkgQual as PkgQual
 import qualified GHC.Data.Bag as Bag
-import qualified GHC.Unit.Module.Name as Name
 import qualified GHC.Unit.Types as Unit.Types
-import qualified GHC.Parser.Errors.Ppr as Errors.Ppr
+import qualified GHC.Utils.Error as Utils.Error
+import qualified Language.Haskell.Syntax.Module.Name as Name
 
 import qualified Data.Generics.Uniplate.Data as Uniplate
 
@@ -57,18 +64,17 @@ import qualified FixImports.Util as Util
 
 -- * parse
 
-type Module = Hs.HsModule
+type Module = Hs.HsModule Hs.GhcPs
 
 type Src = String
 
 -- | makeDynFlags forces parse into IO.  The reason seems to be that GHC
 -- puts dyn flags in a global variable.
 parse :: [Types.Extension] -> FilePath -> Src
-    -> IO (Either String (Hs.HsModule, [Comment]))
+    -> IO (Either String (Module, [Comment]))
 parse extensions filename src = makeDynFlags extensions filename src >>= \case
     Left err -> return $ Left $ "parsing pragmas: " <> err
-    Right dynFlags -> return $
-        extractParseResult dynFlags $ Parser.parseFile filename dynFlags src
+    Right dynFlags -> return $ parseFile filename dynFlags src
 
 data Comment = Comment { _span :: !Types.SrcSpan, _comment :: !String }
     deriving (Eq, Ord, Show)
@@ -83,46 +89,58 @@ makeDynFlags extensions fname src =
     where defaultExtensions = Session.languageExtensions Nothing
 
 defaultDynFlags :: Session.DynFlags
-defaultDynFlags =
-    Session.defaultDynFlags Config.fakeSettings Config.fakeLlvmConfig
+defaultDynFlags = Session.defaultDynFlags Config.fakeSettings
 
-extractParseResult :: Session.DynFlags
-    -> Lexer.ParseResult (SrcLoc.GenLocated l Module)
+-- | Parser.parseFile seems to return an unlifted type, even though I can't
+-- tell from the :t or the source.  But it means you can't pass its result
+-- to a toplevel function.  Weird.
+parseFile :: FilePath -> Session.DynFlags -> String
     -> Either String (Module, [Comment])
-extractParseResult _dynFlags = \case
+parseFile filename dynFlags src = case Parser.parseFile filename dynFlags src of
     Lexer.POk state val -> Right
         ( SrcLoc.unLoc val
+        -- , []
         , List.sort $ map extractComment (Lexer.comment_q state)
-            ++ maybe [] (map extractComment) (Lexer.header_comments state)
+            ++ case Lexer.header_comments state of
+                Strict.Nothing -> []
+                Strict.Just cs -> map extractComment cs
             ++ importComments (SrcLoc.unLoc val)
         -- Lexer.annotations_comments I think is supposed to have comments
         -- associated with their "attached" SrcSpan, whatever that is.
         -- In any case, it's empty for comments in the import block at least.
         )
     Lexer.PFailed state -> Left $ unlines $ concat
-        [ map (("warn: "<>) . show . Errors.Ppr.pprWarning) $
-            Bag.bagToList warns
-        , map (("error: "<>) . show . Errors.Ppr.pprError) $
-            Bag.bagToList errors
+        [ map ("warn: "<>) (extract warns)
+        -- Looks like errors already start with "error: ".  Dunno about warns.
+        , extract errors
         ]
-        where (warns, errors) = Lexer.getMessages state
+        where
+        (warns, errors) = Lexer.getPsMessages state
+        extract =
+            map (Ppr.showSDoc dynFlags . Utils.Error.pprLocMsgEnvelopeDefault)
+            . Bag.bagToList . Error.getMessages
 
+-- | Simplify a comment, this means I lose all the docstring details, but
+-- I think it's ok.
 extractComment :: Hs.LEpaComment -> Comment
 extractComment cmt =
     Comment (extractRealSrcSpan (Annotation.anchor (SrcLoc.getLoc cmt))) $
         case Annotation.ac_tok (SrcLoc.unLoc cmt) of
-            Annotation.EpaDocCommentNext s -> s
-            Annotation.EpaDocCommentPrev s -> s
-            Annotation.EpaDocCommentNamed s -> s
-            Annotation.EpaDocSection _depth s -> s
-            Annotation.EpaDocOptions s -> s
+            Annotation.EpaDocComment doc -> case doc of
+                DocString.MultiLineDocString _decorator cs ->
+                    mconcat $ map (DocString.unpackHDSC . SrcLoc.unLoc) $
+                        NonEmpty.toList cs
+                DocString.NestedDocString _decorator c ->
+                    DocString.unpackHDSC (SrcLoc.unLoc c)
+                DocString.GeneratedDocString c -> DocString.unpackHDSC c
             Annotation.EpaLineComment s -> s
             Annotation.EpaBlockComment s -> s
+            Annotation.EpaDocOptions s -> s
             Annotation.EpaEofComment -> ""
 
 -- * extract
 
-importComments :: Hs.HsModule -> [Comment]
+importComments :: Module -> [Comment]
 importComments =
     map extractComment
         . concatMap (extract . extractAnn . Annotation.ann . SrcLoc.getLoc)
@@ -203,17 +221,23 @@ extractImport :: Hs.LImportDecl Hs.GhcPs -> Types.Import
 extractImport locDecl = Types.Import
     { _importName = Types.ModuleName $ Name.moduleNameString $ SrcLoc.unLoc $
         Hs.ideclName decl
-    , _importPkgQualifier = FastString.unpackFS . SourceText.sl_fs <$>
-        Hs.ideclPkgQual decl
+    , _importPkgQualifier = case Hs.ideclPkgQual decl of
+        PkgQual.NoRawPkgQual -> Nothing
+        PkgQual.RawPkgQual stringLit ->
+            Just $ FastString.unpackFS $ SourceText.sl_fs stringLit
     , _importIsBoot = Hs.ideclSource decl == Unit.Types.IsBoot
     , _importSafe = Hs.ideclSafe decl
     -- I don't distinguish Hs.QualifiedPost
     , _importQualified = Hs.ideclQualified decl /= Hs.NotQualified
     , _importAs = Types.Qualification . Name.moduleNameString . SrcLoc.unLoc
         <$> Hs.ideclAs decl
-    , _importHiding = maybe False fst $ Hs.ideclHiding decl
-    , _importEntities = map (extractEntity . SrcLoc.unLoc) . SrcLoc.unLoc
-        . snd <$> Hs.ideclHiding decl
+    , _importHiding = case Hs.ideclImportList decl of
+        Just (Hs.EverythingBut, _) -> True
+        _ -> False
+    , _importEntities = case Hs.ideclImportList decl of
+        Just (_, things) ->
+            Just $ map (extractEntity . SrcLoc.unLoc) $ SrcLoc.unLoc things
+        _ -> Nothing
     , _importSpan = extractSrcSpan $ Annotation.locA $ SrcLoc.getLoc locDecl
 
     }
@@ -257,9 +281,11 @@ extractEntity = fmap entity . \case
     where
     entity ((qual, var), list) = Types.Entity qual var list
     unvar var = case SrcLoc.unLoc var of
-        Hs.IEName n -> (Nothing, toName n)
+        Hs.IEName _ n -> (Nothing, toName n)
         Hs.IEPattern _ n -> (Just "pattern", toName n)
         Hs.IEType _ n -> (Just "type", toName n)
+        -- It's a DataConCantHappen, so I think supposed to not happen?
+        Hs.XIEWrappedName _ -> (Just "??", Types.Name "XIEWrappedName")
     varStr (Just qual, name) = qual <> " " <> Types.showName name
     varStr (Nothing, name) = Types.showName name
     toName = inferName . unRdrName . SrcLoc.unLoc
