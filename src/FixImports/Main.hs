@@ -5,9 +5,9 @@
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-module FixImports.Main where
+module FixImports.Main (main) where
 import qualified Control.Exception as Exception
-import           Control.Monad (when)
+import           Control.Monad (unless, when)
 import qualified Data.List as List
 import           Data.Maybe (fromMaybe)
 import qualified Data.Set as Set
@@ -98,7 +98,7 @@ mainConfig config flags modulePath = do
             Exit.exitSuccess
 
 data Flag =
-    Config FilePath | Debug | Edit | Include String
+    Config FilePath | Debug | Edit | Help | Include String
     | PackageCache String
     | Verbose
     deriving (Eq, Show)
@@ -112,6 +112,7 @@ options configLocations =
         "print debugging info on stderr"
     , GetOpt.Option [] ["edit"] (GetOpt.NoArg Edit)
         "print delete range and new import block, rather than the whole file"
+    , GetOpt.Option [] ["help"] (GetOpt.NoArg Help) "show usage"
     , GetOpt.Option ['i'] [] (GetOpt.ReqArg Include "path")
         "add to module include path"
     , GetOpt.Option [] ["package-cache"] (GetOpt.ReqArg PackageCache "path") $
@@ -124,9 +125,11 @@ parseArgs :: [String] -> IO (String, [Flag])
 parseArgs args = do
     configLocations <- getConfigLocations
     case GetOpt.getOpt GetOpt.Permute (options configLocations) args of
+        (flags, _, _) | Help `elem` flags -> usage ""
         (flags, [modulePath], []) -> return (modulePath, flags)
-        (_, [], errs) -> usage $ concat errs
-        _ -> usage "too many args"
+        (_, _, errs@(_:_)) -> Exit.die $ List.intercalate "\n" errs
+        (_, args@(_:_), [])  -> Exit.die $ "too many args: " <> show args
+        (_, [], [])  -> Exit.die "got zero args"
 
 extractFlags :: [Flag] -> (Bool, Bool, [FilePath], Maybe FilePath)
 extractFlags flags =
@@ -141,9 +144,10 @@ usage :: String -> IO a
 usage msg = do
     name <- Environment.getProgName
     configLocations <- getConfigLocations
-    IO.hPutStr IO.stderr $
-        GetOpt.usageInfo (msg ++ "\n" ++ name ++ " Module.hs <Module.hs")
-            (options configLocations)
+    unless (null msg) $
+        IO.hPutStr IO.stderr msg
+    IO.hPutStr IO.stderr $ GetOpt.usageInfo (name ++ " Module.hs <Module.hs")
+        (options configLocations)
     IO.hPutStrLn IO.stderr $
         "version: " ++ Version.showVersion Paths_fix_imports.version
     Exit.exitFailure
