@@ -5,7 +5,7 @@ nm <silent> ,a :call FixImports()<cr>
 " Parse --edit output and splice in the imports.
 function s:ReplaceImports(lines)
     let [start, end] = split(a:lines[0], ',')
-    " Otherwise vim does string comparison.
+    " +0 or vim does string comparison.
     if end+0 > start+0
         " This stupidity is necessary because vim apparently has no way to
         " delete lines.
@@ -13,13 +13,22 @@ function s:ReplaceImports(lines)
         let old_col = col('.')
         let old_total = line('$')
         silent execute (start+1) . ',' . end . 'delete _'
-        " If the import fix added or removed lines I need to take that
-        " into account.  This will be wrong if the cursor was in the
-        " import block.
         let new_total = line('$')
-        call cursor(old_line + (new_total - old_total), old_col)
+        " Try to retain the cursor position.
+        " If <0, then I'm inside the import block and I can just keep the line.
+        " Otherwise, I have to move down for added lines or up for removed.
+        let dest_line = old_line + (new_total - old_total)
+        if dest_line >= 0
+            call cursor(dest_line, old_col)
+            call append(start, a:lines[1:])
+        else
+            call append(start, a:lines[1:])
+            call cursor(old_line, old_col)
+        endif
+    else
+        " This means no existing import block, just add it.
+        call append(start, a:lines[1:])
     endif
-    call append(start, a:lines[1:])
 endfunction
 
 
