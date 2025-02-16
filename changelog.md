@@ -1,3 +1,7 @@
+### 2.5.0
+
+- update to ghc-lib-parser 9.6, should support at least ghc 9.4 and 9.6
+
 - add --package-cache flag, to read from a specific package cache.  Should be
 faster than ghc-pkg.
 
