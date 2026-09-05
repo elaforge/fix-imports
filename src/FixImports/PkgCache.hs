@@ -9,6 +9,7 @@ import           Data.Text (Text)
 import qualified Data.Text as Text
 import           System.FilePath ((</>))
 import qualified Data.Set as Set
+import qualified System.Directory as Directory
 
 import qualified Distribution.InstalledPackageInfo as IPI
 import qualified Distribution.ModuleName as ModuleName
@@ -36,9 +37,11 @@ load wanted pkgDbs = do
 
 loadCache :: FilePath -> IO [(UnitId, (PkgName, [ModuleName]))]
 loadCache cachePath = do
-    (pkgs, _) <- Database.readPackageDbForGhcPkg cachePath
-        Database.DbOpenReadOnly
-    pure $ mapMaybe extract pkgs
+    exists <- Directory.doesFileExist cachePath
+    if not exists then pure [] else do
+        (pkgs, _) <- Database.readPackageDbForGhcPkg cachePath
+            Database.DbOpenReadOnly
+        pure $ mapMaybe extract pkgs
 
 extract :: IPI.InstalledPackageInfo -> Maybe (UnitId, (PkgName, [ModuleName]))
 extract pkg

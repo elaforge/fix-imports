@@ -62,6 +62,7 @@ import qualified Numeric
 import qualified System.Directory as Directory
 import qualified System.FilePath as FilePath
 import           System.FilePath ((</>))
+import qualified System.IO as IO
 
 import qualified Language.Preprocessor.Cpphs as Cpphs
 
@@ -107,7 +108,7 @@ fixModule config mbPkgCache modulePath source = do
         Right (mod, cmts) -> do
             mParse <- metric (mod `seq` (), cmts) "parse"
             (index, indexFrom) <- Index.load mbPkgCache
-            when (Config._debug config) $ Text.IO.putStr $
+            when (Config._debug config) $ Text.IO.hPutStr IO.stderr $
                 "index from " <> indexFrom <> ":\n" <> Index.showIndex index
             mLoad <- metric () "load-index"
             let extracted = extract config mod cmts

@@ -12,6 +12,7 @@ import           Data.Bifunctor (second)
 import           Data.Maybe (mapMaybe)
 import           Data.Text (Text)
 import           System.FilePath ((</>))
+import qualified Data.Char as Char
 import qualified Data.Either as Either
 import qualified Data.List as List
 import qualified Data.Map as Map
@@ -19,10 +20,11 @@ import qualified Data.Maybe as Maybe
 import qualified Data.Set as Set
 import qualified Data.Text as Text
 import qualified Data.Text.IO as Text.IO
-import qualified GHC.Paths
 
 import qualified System.Directory as Directory
+import qualified System.Exit as Exit
 import qualified System.IO as IO
+import qualified System.Process as Process
 
 import qualified FixImports.PkgCache as PkgCache
 import qualified FixImports.Types as Types
@@ -60,16 +62,13 @@ showIndex index = Text.unlines
     | (Types.Qualification k, v) <- Map.toAscList index
     ]
 
--- | I think the global package db is always under the libdir?
-bootPkgDb :: FilePath
-bootPkgDb = GHC.Paths.libdir </> "package.conf.d"
-
 fromGhcEnvironment :: IO (Maybe Index)
 fromGhcEnvironment = parseGhcEnvironment >>= \case
     Nothing -> return Nothing
     Just (pkgDbs, unitIds) -> do
-        nameModules <- PkgCache.load (Set.fromList unitIds)
-            (bootPkgDb : pkgDbs)
+        -- Technically only if there's a global-package-db, but there is.
+        bootPkgDb <- (</> "package.conf.d") <$> capture "ghc" ["--print-libdir"]
+        nameModules <- PkgCache.load (Set.fromList unitIds) (bootPkgDb : pkgDbs)
         return $ Just $ makeIndex $
             map (fmap (map Types.ModuleName)) nameModules
 
@@ -77,15 +76,19 @@ fromGhcEnvironment = parseGhcEnvironment >>= \case
 -- Distribution.Simple.GHC.Internal, the code to read it is copy pasted over
 -- into cabal-install Distribution.Client.CmdInstall.  So they're not even
 -- thinking of being consistent with themselves, let alone anyone else.
--- Too much bother.
 parseGhcEnvironment :: IO (Maybe ([FilePath], [PkgCache.UnitId]))
 parseGhcEnvironment = do
-    envFiles <- filter (".ghc.environment." `List.isPrefixOf`) <$>
-        Directory.listDirectory "."
+    version <- capture "ghc" ["--numeric-version"]
+    -- e.g.: .ghc.environment.aarch64-darwin-9.12.4
+    -- I could get the arch but seems like a bother.
+    let wanted p = ".ghc.environment." `List.isPrefixOf` p
+            && version `List.isSuffixOf` p
+    envFiles <- filter wanted <$> Directory.listDirectory "."
     case envFiles of
-        [] -> return Nothing
-        [envFile] -> Just . parseEnvFile <$> Text.IO.readFile envFile
-        _ -> error $ "multiple ghc env files: " <> unwords envFiles
+        [] -> pure Nothing
+        [envFile] -> do
+            Just . parseEnvFile <$> Text.IO.readFile envFile
+        _ -> Exit.die $ "multiple ghc env files: " <> unwords envFiles
 
 parseEnvFile :: Text -> ([FilePath], [PkgCache.UnitId])
 parseEnvFile = Either.partitionEithers . mapMaybe parse . Text.lines
@@ -175,6 +178,8 @@ parseSection (x:xs) = Just
     (pre, post) = span (" " `Text.isPrefixOf`) xs
 
 
--- * read cache
+-- * util
 
-
+capture :: FilePath -> [String] -> IO String
+capture cmd args = List.dropWhileEnd Char.isSpace <$>
+    Process.readProcess cmd args ""
